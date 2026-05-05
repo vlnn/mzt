@@ -40,7 +40,29 @@ def test_literal_pushes_via_pre_decrement():
 
 @pytest.mark.parametrize(
     "name,expected_call",
-    [("+", "bl      _plus"), (".", "bl      _dot")],
+    [
+        ("dup",    "bl      _dup"),
+        ("drop",   "bl      _drop"),
+        ("swap",   "bl      _swap"),
+        ("over",   "bl      _over"),
+        ("nip",    "bl      _nip"),
+        ("rot",    "bl      _rot"),
+        ("+",      "bl      _plus"),
+        ("-",      "bl      _minus"),
+        ("*",      "bl      _star"),
+        ("/mod",   "bl      _divmod"),
+        ("=",      "bl      _eq"),
+        ("<",      "bl      _lt"),
+        (">",      "bl      _gt"),
+        ("0=",     "bl      _zeq"),
+        ("and",    "bl      _and"),
+        ("or",     "bl      _or"),
+        ("xor",    "bl      _xor"),
+        ("invert", "bl      _invert"),
+        ("negate", "bl      _negate"),
+        ("abs",    "bl      _abs"),
+        (".",      "bl      _dot"),
+    ],
 )
 def test_primitive_compiles_to_bl(name, expected_call):
     asm = _emit_main(PrimRef(name))

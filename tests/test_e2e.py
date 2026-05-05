@@ -19,6 +19,9 @@ apple_silicon_only = pytest.mark.skipif(
     "source_name,expected_stdout",
     [
         ("add.fs", "5\n"),
+        ("arith.fs", "21\n"),
+        ("square.fs", "100\n"),
+        ("abs.fs", "7\n"),
     ],
 )
 def test_compiles_and_runs(tmp_build_dir, source_name, expected_stdout):

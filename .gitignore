@@ -9,8 +9,7 @@ build/
 .coverage
 coverage.xml
 
-examples/hello
-examples/*.o
-
-*.s
+examples/*
+!examples/.gitkeep
+!examples/*.fs
 !examples/hello.s
