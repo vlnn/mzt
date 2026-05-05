@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from mzt.builder import build
+from mzt.builder import build, build_source, compile_to_asm
+from mzt.compiler import CompileError
 
 EXAMPLES = Path(__file__).parent.parent / "examples"
 
@@ -92,3 +93,64 @@ def test_m0_hello_runs(tmp_build_dir):
 
     assert result.stdout == "hello\n", \
         "M0 hand-written hello.s should print 'hello' followed by a newline"
+
+
+def test_compile_to_asm_threads_source_through_pipeline():
+    asm = compile_to_asm(": main 2 3 + . ;")
+    for fragment in ("_word_main:", "ldr     x0, =2", "ldr     x0, =3", "bl      _plus", "bl      _dot"):
+        assert fragment in asm, \
+            f"compile_to_asm should produce assembly containing {fragment!r}"
+
+
+def test_compile_to_asm_requires_main_word():
+    with pytest.raises(CompileError, match="main"):
+        compile_to_asm(": helper 1 ;")
+
+
+def test_build_source_writes_assembly_for_compiled_program(mocker, tmp_build_dir, tmp_path):
+    mocker.patch("mzt.builder.subprocess.run")
+    src = tmp_path / "x.fs"
+    src.write_text(": main 2 3 + . ;\n")
+    out = tmp_build_dir / "x"
+
+    build_source(src, out)
+
+    asm = out.with_suffix(".s").read_text()
+    assert "_word_main:" in asm, \
+        "build_source should compile the source through to assembly"
+    assert "ldr     x0, =2" in asm and "ldr     x0, =3" in asm, \
+        "literals from the source should appear in the emitted assembly"
+
+
+def test_build_source_invokes_clang(mocker, tmp_build_dir, tmp_path):
+    run = mocker.patch("mzt.builder.subprocess.run")
+    src = tmp_path / "x.fs"
+    src.write_text(": main 0 . ;\n")
+
+    build_source(src, tmp_build_dir / "x")
+
+    cmd = run.call_args.args[0]
+    assert cmd[0] == "clang" and "-arch" in cmd and "arm64" in cmd, \
+        "build_source should still hand the assembly to clang -arch arm64"
+
+
+def test_build_source_returns_output_path(mocker, tmp_build_dir, tmp_path):
+    mocker.patch("mzt.builder.subprocess.run")
+    src = tmp_path / "x.fs"
+    src.write_text(": main 0 . ;\n")
+    out = tmp_build_dir / "x"
+
+    result = build_source(src, out)
+
+    assert result == out, "build_source should return the output binary path"
+
+
+def test_build_source_raises_when_main_missing(mocker, tmp_build_dir, tmp_path):
+    run = mocker.patch("mzt.builder.subprocess.run")
+    src = tmp_path / "x.fs"
+    src.write_text(": helper 1 ;\n")
+
+    with pytest.raises(CompileError, match="main"):
+        build_source(src, tmp_build_dir / "x")
+
+    run.assert_not_called()
