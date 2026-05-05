@@ -5,7 +5,11 @@ DSTACK_BYTES = 8192
 
 
 def runtime_preamble() -> str:
-    return _entry_point() + "".join(_emit_primitive(p) for p in all_primitives())
+    return (
+        _entry_point()
+        + _print_str_helper()
+        + "".join(_emit_primitive(p) for p in all_primitives())
+    )
 
 
 def runtime_epilogue() -> str:
@@ -26,6 +30,21 @@ _main:
     add     x19, x19, #{DSTACK_BYTES}
     bl      _word_main
     mov     w0, #0
+    ldp     x29, x30, [sp], #16
+    ret
+
+"""
+
+
+def _print_str_helper() -> str:
+    return """\
+_print_str:
+    stp     x29, x30, [sp, #-16]!
+    mov     x29, sp
+    mov     x2, x1
+    mov     x1, x0
+    mov     x0, #1
+    bl      _write
     ldp     x29, x30, [sp], #16
     ret
 

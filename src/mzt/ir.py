@@ -16,7 +16,23 @@ class ColonRef:
     name: str
 
 
-Cell = Literal | PrimRef | ColonRef
+@dataclass(frozen=True)
+class Label:
+    id: int
+
+
+@dataclass(frozen=True)
+class Branch:
+    target: int
+    conditional: bool
+
+
+@dataclass(frozen=True)
+class StringLit:
+    content: str
+
+
+Cell = Literal | PrimRef | ColonRef | Label | Branch | StringLit
 
 
 @dataclass(frozen=True)

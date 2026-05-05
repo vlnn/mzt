@@ -9,27 +9,27 @@ IR, and peephole passes are reusable, the back end is rewritten for AArch64.
 
 ## Status
 
-**M2 — stack words and arithmetic.** Subroutine-threaded code, 21 primitives:
+**M4 — output: `emit`, `cr`, `."`.** Byte-level output via `_write` syscalls.
+Strings parsed by a character-level tokenizer so spaces inside `." …"` are
+preserved verbatim, then interned into a `__cstring` section with each
+string getting a unique `Lstr_N` label. Compiled call shape:
+`adrp x0, Lstr_N@PAGE ; add x0, x0, Lstr_N@PAGEOFF ; mov x1, #len ; bl _print_str`.
 
-- Stack: `dup` `drop` `swap` `over` `nip` `rot`
-- Arithmetic: `+` `-` `*` `/mod` `negate` `abs`
-- Comparison: `=` `<` `>` `0=`
-- Bitwise: `and` `or` `xor` `invert`
-- I/O: `.` (printf via Apple's stack-only variadic ABI)
-
-Truth values follow Forth convention: `-1` (all bits set) for true, `0` for false.
+Still in: 23 primitives, control flow, subroutine-threaded code, 8 KB
+data stack in `x19`.
 
 ## Quickstart
 
 ```bash
 uv sync
-make test                    # 248 passing on Linux / 253 on Mac
-make examples                # macOS / Apple Silicon only — builds every .fs
-./examples/arith             # 21
-./examples/square            # 100
-./examples/abs               # 7
-./examples/add               # 5
-./examples/hello             # hello
+make test                         # 319 passing on Linux / 330 on Apple Silicon
+make examples                     # macOS / Apple Silicon only
+./examples/hello-text             # Hello, world!
+./examples/letter                 # A
+./examples/greet                  # Hello, mzt!
+./examples/fact                   # 120
+./examples/countdown              # 5 4 3 2 1
+./examples/ifelse                 # 42
 ```
 
 ## CLI
@@ -42,17 +42,18 @@ Source files must define `: main ... ;` as the entry point.
 
 ## Test layers
 
-- **Pure pytest** for tokenizer, compiler, primitive registry, emitter, CLI.
-- **clang + Unicorn** for primitive bodies — `clang -arch arm64 -c` produces
-  a Mach-O object, a small parser pulls the `__TEXT,__text` bytes out, and
-  Unicorn executes them against a synthetic data stack. No keystone, no
-  extra installs beyond the clang already needed for the main build.
-  ~30 ms per unique primitive (cached for the session) plus ~10 ms per
-  test case.
+- **Pure pytest** for tokenizer, compiler (including control-flow IR shape),
+  primitive registry, emitter, CLI.
+- **clang + Unicorn** for primitive bodies (each of the 21 primitives, ~70
+  cases) and control-flow semantics (`cbz`/`b` actually jump where the
+  emitter says they will). `clang -arch arm64 -c` produces a Mach-O object,
+  a small parser pulls the `__TEXT,__text` bytes out, and Unicorn runs
+  them against a synthetic data stack. `@lru_cache` amortises the
+  per-primitive subprocess cost.
 - **End-to-end** via `clang` and the produced Mach-O binary; gated to
   `sys.platform == "darwin"`.
 
 ## Roadmap
 
-See `MVP_Plan` for the milestone breakdown (M0 → M6). Next up: M3 control
-flow (`if`/`else`/`then`, `begin`/`until`/`while`/`repeat`).
+See `MVP_Plan` for the milestone breakdown (M0 → M6). Next up: M5
+peephole framework with the first two rules.

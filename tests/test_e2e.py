@@ -18,10 +18,16 @@ apple_silicon_only = pytest.mark.skipif(
 @pytest.mark.parametrize(
     "source_name,expected_stdout",
     [
-        ("add.fs", "5\n"),
-        ("arith.fs", "21\n"),
-        ("square.fs", "100\n"),
-        ("abs.fs", "7\n"),
+        ("add.fs",        "5\n"),
+        ("arith.fs",      "21\n"),
+        ("square.fs",     "100\n"),
+        ("abs.fs",        "7\n"),
+        ("ifelse.fs",     "42\n"),
+        ("countdown.fs",  "5\n4\n3\n2\n1\n"),
+        ("fact.fs",       "120\n"),
+        ("hello-text.fs", "Hello, world!\n"),
+        ("letter.fs",     "A\n"),
+        ("greet.fs",      "Hello, mzt!\n"),
     ],
 )
 def test_compiles_and_runs(tmp_build_dir, source_name, expected_stdout):

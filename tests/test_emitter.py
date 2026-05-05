@@ -1,7 +1,7 @@
 import pytest
 
 from mzt.emitter import emit_program
-from mzt.ir import ColonDef, ColonRef, Literal, PrimRef
+from mzt.ir import Branch, ColonDef, ColonRef, Label, Literal, PrimRef
 
 
 def _emit_main(*body):
@@ -62,6 +62,8 @@ def test_literal_pushes_via_pre_decrement():
         ("negate", "bl      _negate"),
         ("abs",    "bl      _abs"),
         (".",      "bl      _dot"),
+        ("emit",   "bl      _emit"),
+        ("cr",     "bl      _cr"),
     ],
 )
 def test_primitive_compiles_to_bl(name, expected_call):
@@ -86,6 +88,9 @@ def test_colon_ref_calls_word_label():
         "_main:",
         "_plus:",
         "_dot:",
+        "_emit:",
+        "_cr:",
+        "_print_str:",
         "Lfmt_dot:",
         "Ldstack_base",
     ],
@@ -110,3 +115,107 @@ def test_main_body_appears_in_definition_order():
     plus = asm.index("bl      _plus")
     assert two < three < plus, \
         "instructions should appear in source order: 2 then 3 then +"
+
+
+def test_label_emits_local_assembler_label():
+    asm = _emit_main(Label(7))
+    assert "L7:" in asm, "Label(7) should emit a Mach-O local label 'L7:'"
+
+
+def test_unconditional_branch_emits_b():
+    asm = _emit_main(Branch(target=3, conditional=False))
+    assert "b       L3" in asm, \
+        "unconditional Branch should emit 'b L<target>' for the assembler"
+
+
+def test_conditional_branch_pops_then_cbz():
+    asm = _emit_main(Branch(target=2, conditional=True))
+    assert "ldr     x0, [x19], #8" in asm, \
+        "conditional Branch should pop TOS into x0 before testing"
+    assert "cbz     x0, L2" in asm, \
+        "conditional Branch should branch to its target when popped value is zero"
+
+
+def test_conditional_branch_emits_pop_before_cbz():
+    asm = _emit_main(Branch(target=4, conditional=True))
+    pop_idx = asm.index("ldr     x0, [x19], #8")
+    cbz_idx = asm.index("cbz     x0, L4")
+    assert pop_idx < cbz_idx, "the pop must precede the cbz, not follow it"
+
+
+def test_if_then_program_round_trip():
+    asm = _emit_main(
+        Literal(1),
+        Branch(target=0, conditional=True),
+        Literal(42),
+        Label(0),
+    )
+    pop_idx = asm.index("cbz     x0, L0")
+    body_idx = asm.index("ldr     x0, =42")
+    label_idx = asm.index("L0:")
+    assert pop_idx < body_idx < label_idx, \
+        "if/then asm should branch over the body to the label, in that order"
+
+
+def test_string_lit_emits_print_str_call():
+    from mzt.ir import StringLit
+    asm = _emit_main(StringLit("hi"))
+    assert "adrp    x0, Lstr_0@PAGE" in asm, \
+        "StringLit should load address of its interned label via adrp/add"
+    assert "add     x0, x0, Lstr_0@PAGEOFF" in asm, \
+        "StringLit should complete the address with PAGEOFF"
+    assert "mov     x1, #2" in asm, \
+        "StringLit should pass byte length in x1 (len('hi') == 2)"
+    assert "bl      _print_str" in asm, \
+        "StringLit should call into the runtime _print_str helper"
+
+
+def test_each_string_lit_gets_a_fresh_label():
+    from mzt.ir import StringLit
+    asm = _emit_main(StringLit("a"), StringLit("b"))
+    assert "Lstr_0:" in asm and "Lstr_1:" in asm, \
+        "consecutive StringLits should each get a unique Lstr_N label"
+
+
+def test_string_content_interned_in_cstring_section():
+    from mzt.ir import StringLit
+    asm = _emit_main(StringLit("hi"))
+    cstring_idx = asm.rfind(".section __TEXT,__cstring")
+    label_idx = asm.rfind("Lstr_0:")
+    asciz_idx = asm.rfind('.asciz  "hi"')
+    assert cstring_idx != -1, \
+        "asm should declare a __TEXT,__cstring section to hold user strings"
+    assert label_idx > cstring_idx, "Lstr_0: must be inside the cstring section"
+    assert asciz_idx > label_idx, ".asciz directive must follow the label"
+
+
+def test_each_string_lit_is_nul_terminated():
+    from mzt.ir import StringLit
+    asm = _emit_main(StringLit("Hello, "), StringLit("mzt"), StringLit("!"))
+    user_string_asciz = sum(
+        1 for line in asm.splitlines() if line.lstrip().startswith(".asciz")
+    )
+    assert user_string_asciz == 4, \
+        "every interned user string plus the runtime printf format must use .asciz: " \
+        "without the trailing NUL the __TEXT,__cstring linker collapses adjacent " \
+        "strings into one and remaps later Lstr_N labels to the start of the merged blob"
+    user_string_section_idx = asm.find("Lstr_0:")
+    user_strings = asm[user_string_section_idx:]
+    assert ".ascii " not in user_strings, \
+        "user-string section must not contain .ascii (no NUL) — only .asciz"
+
+
+def test_string_with_special_chars_is_escaped():
+    from mzt.ir import StringLit
+    asm = _emit_main(StringLit('say "hi"\nthere'))
+    assert r'\042' in asm or r'\"' in asm, \
+        "double quote in content must be escaped so the assembler does not close the string early"
+    assert r"\012" in asm, \
+        "newline in content must be escaped as octal so the assembler emits a 0x0a byte"
+
+
+def test_byte_length_uses_utf8_byte_count():
+    from mzt.ir import StringLit
+    asm = _emit_main(StringLit("é"))
+    assert "mov     x1, #2" in asm, \
+        "string length should be UTF-8 byte length, not Python char count"

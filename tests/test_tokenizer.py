@@ -99,3 +99,55 @@ def test_dataclass_is_hashable():
     a = Token(TokenKind.NUMBER, 1, 1)
     b = Token(TokenKind.NUMBER, 1, 1)
     assert {a, b} == {a}, "Tokens with equal fields should compare and hash equal"
+
+
+def test_dot_quote_emits_string_token():
+    [tok] = tokenize(': main ." Hello, world!" ;')[2:3]
+    assert tok.kind == TokenKind.STRING, "'.\"' should produce a STRING token"
+    assert tok.value == "Hello, world!", \
+        "STRING token should carry the literal content between '.\"' and the closing quote"
+
+
+@pytest.mark.parametrize(
+    "source,expected_content",
+    [
+        ('." hi"',                 "hi"),
+        ('." Hello, world!"',      "Hello, world!"),
+        ('."  two leading spaces"', " two leading spaces"),
+        ('." with ( fake comment )"', "with ( fake comment )"),
+        ('." escaped \\ backslash"', "escaped \\ backslash"),
+        ('." "',                   ""),
+    ],
+)
+def test_string_content_preserved(source, expected_content):
+    [tok] = [t for t in tokenize(source) if t.kind == TokenKind.STRING]
+    assert tok.value == expected_content, \
+        f"tokenize({source!r}) STRING content should be {expected_content!r}"
+
+
+def test_string_can_span_multiple_lines():
+    tokens = tokenize('." line one\nline two"')
+    [s] = [t for t in tokens if t.kind == TokenKind.STRING]
+    assert s.value == "line one\nline two", \
+        "string content should preserve embedded newlines verbatim"
+
+
+def test_unterminated_string_raises():
+    from mzt.tokenizer import TokenizerError
+    with pytest.raises(TokenizerError, match="unterminated"):
+        tokenize(': main ." no closing quote ;')
+
+
+def test_dot_quote_without_following_whitespace_is_a_word():
+    tokens = tokenize(': main ."hi" ;')
+    kinds = [t.kind for t in tokens]
+    assert TokenKind.STRING not in kinds, \
+        '\'.\"\' followed immediately by content (no space) is not a string opener'
+
+
+def test_full_program_with_string():
+    tokens = tokenize(': main ." hi" cr ;')
+    kinds = [t.kind for t in tokens]
+    assert kinds == [
+        TokenKind.COLON, TokenKind.WORD, TokenKind.STRING, TokenKind.WORD, TokenKind.SEMI,
+    ], "': main .\" hi\" cr ;' should tokenize as colon/word/string/word/semi"

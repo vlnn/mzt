@@ -9,7 +9,7 @@ M2_NAMES = [
     "=", "<", ">", "0=",
     "and", "or", "xor", "invert",
     "negate", "abs",
-    ".",
+    ".", "emit", "cr",
 ]
 
 

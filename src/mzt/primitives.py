@@ -111,6 +111,36 @@ _DOT = (
 )
 
 
+_EMIT = (
+    "    stp     x29, x30, [sp, #-16]!\n"
+    "    mov     x29, sp\n"
+    "    sub     sp, sp, #16\n"
+    "    ldr     x0, [x19], #8\n"
+    "    strb    w0, [sp]\n"
+    "    mov     x0, #1\n"
+    "    mov     x1, sp\n"
+    "    mov     x2, #1\n"
+    "    bl      _write\n"
+    "    add     sp, sp, #16\n"
+    "    ldp     x29, x30, [sp], #16\n"
+)
+
+
+_CR = (
+    "    stp     x29, x30, [sp, #-16]!\n"
+    "    mov     x29, sp\n"
+    "    sub     sp, sp, #16\n"
+    "    mov     w0, #10\n"
+    "    strb    w0, [sp]\n"
+    "    mov     x0, #1\n"
+    "    mov     x1, sp\n"
+    "    mov     x2, #1\n"
+    "    bl      _write\n"
+    "    add     sp, sp, #16\n"
+    "    ldp     x29, x30, [sp], #16\n"
+)
+
+
 _PRIMITIVES: dict[str, Primitive] = {
     p.name: p for p in [
         Primitive("dup",    "_dup",    _DUP),
@@ -134,6 +164,8 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive("negate", "_negate", _unary_in_place("neg")),
         Primitive("abs",    "_abs",    _ABS),
         Primitive(".",      "_dot",    _DOT),
+        Primitive("emit",   "_emit",   _EMIT),
+        Primitive("cr",     "_cr",     _CR),
     ]
 }
 
