@@ -43,6 +43,12 @@ apple_silicon_only = pytest.mark.skipif(
         ("do-nested.fs",  "1\n2\n2\n4\n3\n6\n"),
         ("recurse-fact.fs",  "120\n"),
         ("constant-area.fs", "27\n"),
+        ("noname-execute.fs", "12\n"),
+        ("noname-thunk.fs",   "ABC\n"),
+        ("noname-runner.fs",  "12\n12\n"),
+        ("include-helpers.fs", "10\n16\n"),
+        ("include-and-thunks.fs", "14\n25\n"),
+        ("include-stdlib.fs", "8\n3\n"),
     ],
 )
 def test_compiles_and_runs(tmp_build_dir, source_name, expected_stdout):

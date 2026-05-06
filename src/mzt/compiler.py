@@ -1,9 +1,11 @@
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from mzt.control_stack import ControlStack, ControlStackError
 from mzt.dictionary import Dictionary
-from mzt.ir import Addr, Branch, Cell, ColonDef, ColonRef, Label, Literal, PrimRef, StringLit
+from mzt.include_resolver import IncludeNotFound, IncludeResolver
+from mzt.ir import Addr, Branch, Cell, ColonDef, ColonRef, Label, Literal, PrimRef, StringLit, WordAddr
 from mzt.primitives import is_primitive
 from mzt.tokenizer import Token, TokenKind, tokenize
 
@@ -46,21 +48,50 @@ class _ProgramState:
     bump: int = 0
     dictionary: Dictionary = field(default_factory=Dictionary)
     labels: _LabelGen = field(default_factory=_LabelGen)
+    synthetic_defs: list[ColonDef] = field(default_factory=list)
+    next_noname_id: int = 0
+    resolver: IncludeResolver = field(default_factory=IncludeResolver)
+    current_source_path: "Path | None" = None
 
     def claim_address(self, size: int) -> int:
         offset = self.bump
         self.bump += size
         return offset
 
+    def fresh_noname_name(self) -> str:
+        name = f"__noname_{self.next_noname_id}"
+        self.next_noname_id += 1
+        return name
 
-def compile_source(source: str) -> list[ColonDef]:
-    return compile_tokens(tokenize(source))
+
+def compile_source(
+    source: str,
+    *,
+    source_path: "Path | None" = None,
+    include_dirs: "list[Path] | None" = None,
+) -> list[ColonDef]:
+    return compile_tokens(
+        tokenize(source, source=str(source_path) if source_path else "<input>"),
+        source_path=source_path,
+        include_dirs=include_dirs,
+    )
 
 
-def compile_tokens(tokens: list[Token]) -> list[ColonDef]:
+def compile_tokens(
+    tokens: list[Token],
+    *,
+    source_path: "Path | None" = None,
+    include_dirs: "list[Path] | None" = None,
+) -> list[ColonDef]:
     cursor = _PeekableTokens(tokens)
-    state = _ProgramState()
-    return list(_parse_top_level(cursor, state))
+    state = _ProgramState(
+        resolver=IncludeResolver(include_dirs=include_dirs),
+        current_source_path=source_path,
+    )
+    if source_path is not None:
+        state.resolver.mark_seen(Path(source_path).resolve())
+    top_level = list(_parse_top_level(cursor, state))
+    return top_level + state.synthetic_defs
 
 
 def _parse_top_level(cursor: "_PeekableTokens", state: _ProgramState) -> Iterator[ColonDef]:
@@ -87,6 +118,14 @@ def _parse_top_level(cursor: "_PeekableTokens", state: _ProgramState) -> Iterato
         if token.kind == TokenKind.NUMBER and _next_is_constant(cursor):
             keyword = cursor.next()
             yield _parse_constant(cursor, token, keyword, state)
+            continue
+        if token.kind == TokenKind.WORD and token.value == ":noname":
+            raise CompileError(
+                f"line {token.line}: ':noname' only makes sense inside a colon "
+                "definition where its address can be pushed onto the data stack"
+            )
+        if token.kind == TokenKind.WORD and token.value == "include":
+            yield from _process_include(cursor, token, state)
             continue
         raise CompileError(
             f"line {token.line}: expected ':', 'variable', or 'create' at top level, "
@@ -175,14 +214,19 @@ def _parse_colon(cursor: "_PeekableTokens", colon_token: Token, state: _ProgramS
         raise CompileError(f"line {colon_token.line}: ':' must be followed by a word name")
     _check_name_available(name_token.value, colon_token, state)
     body_state = _BodyState(labels=state.labels, current_name=name_token.value)
-    body = _parse_body(cursor, name_token, body_state)
+    body = _parse_body(cursor, name_token, body_state, state)
     state.dictionary.register(
         name_token.value, kind="colon", source=colon_token.source, line=colon_token.line
     )
     return ColonDef(name=name_token.value, body=body)
 
 
-def _parse_body(cursor: "_PeekableTokens", name_token: Token, state: _BodyState) -> tuple[Cell, ...]:
+def _parse_body(
+    cursor: "_PeekableTokens",
+    name_token: Token,
+    state: _BodyState,
+    program: _ProgramState,
+) -> tuple[Cell, ...]:
     while not cursor.eof():
         token = cursor.next()
         if token.kind == TokenKind.SEMI:
@@ -198,6 +242,9 @@ def _parse_body(cursor: "_PeekableTokens", name_token: Token, state: _BodyState)
                     "every >r must be matched by an r> before ';'"
                 )
             return tuple(state.cells)
+        if token.kind == TokenKind.WORD and token.value == ":noname":
+            _consume_noname(cursor, token, state, program)
+            continue
         _consume_token(token, state, name_token)
     raise CompileError(
         f"line {name_token.line}: ':{name_token.value}' is missing closing ';'"
@@ -205,6 +252,11 @@ def _parse_body(cursor: "_PeekableTokens", name_token: Token, state: _BodyState)
 
 
 def _consume_token(token: Token, state: _BodyState, name_token: Token) -> None:
+    if token.kind == TokenKind.WORD and token.value == "include":
+        raise CompileError(
+            f"line {token.line}: 'include' must appear at top level, "
+            f"not inside ':{name_token.value}'"
+        )
     if token.kind == TokenKind.WORD and token.value in _CONTROL_HANDLERS:
         _CONTROL_HANDLERS[token.value](state, token)
         return
@@ -213,6 +265,60 @@ def _consume_token(token: Token, state: _BodyState, name_token: Token) -> None:
         _require_loop_depth(state, token, cell.name, 1)
     state.cells.append(cell)
     _track_return_stack(cell, token, state, name_token)
+
+
+def _consume_noname(
+    cursor: "_PeekableTokens",
+    keyword: Token,
+    outer: _BodyState,
+    program: _ProgramState,
+) -> None:
+    name = program.fresh_noname_name()
+    synthetic_token = Token(
+        kind=TokenKind.WORD,
+        value=name,
+        line=keyword.line,
+        col=keyword.col,
+        source=keyword.source,
+        raw=name,
+    )
+    body_state = _BodyState(labels=program.labels, current_name=name)
+    body = _parse_body(cursor, synthetic_token, body_state, program)
+    program.synthetic_defs.append(ColonDef(name=name, body=body))
+    outer.cells.append(WordAddr(name))
+
+
+def _process_include(
+    cursor: "_PeekableTokens",
+    keyword: Token,
+    state: _ProgramState,
+) -> Iterator[ColonDef]:
+    if cursor.eof():
+        raise CompileError(
+            f"line {keyword.line}: 'include' must be followed by a filename"
+        )
+    name_token = cursor.next()
+    if name_token.kind != TokenKind.WORD:
+        raise CompileError(
+            f"line {keyword.line}: 'include' must be followed by a filename, "
+            f"got {name_token.value!r}"
+        )
+    try:
+        path = state.resolver.resolve(name_token.value, state.current_source_path)
+    except IncludeNotFound as exc:
+        raise CompileError(f"line {keyword.line}: {exc}") from None
+    if state.resolver.has_seen(path):
+        return
+    state.resolver.mark_seen(path)
+    text = path.read_text()
+    sub_tokens = tokenize(text, source=str(path))
+    sub_cursor = _PeekableTokens(sub_tokens)
+    previous_path = state.current_source_path
+    state.current_source_path = path
+    try:
+        yield from _parse_top_level(sub_cursor, state)
+    finally:
+        state.current_source_path = previous_path
 
 
 def _track_return_stack(cell: Cell, token: Token, state: _BodyState, name_token: Token) -> None:
@@ -432,8 +538,20 @@ class _PeekableTokens:
         return self.tokens[idx]
 
 
-def program_user_memory_size(source: str) -> int:
-    cursor = _PeekableTokens(tokenize(source))
-    state = _ProgramState()
+def program_user_memory_size(
+    source: str,
+    *,
+    source_path: "Path | None" = None,
+    include_dirs: "list[Path] | None" = None,
+) -> int:
+    cursor = _PeekableTokens(
+        tokenize(source, source=str(source_path) if source_path else "<input>")
+    )
+    state = _ProgramState(
+        resolver=IncludeResolver(include_dirs=include_dirs),
+        current_source_path=source_path,
+    )
+    if source_path is not None:
+        state.resolver.mark_seen(Path(source_path).resolve())
     list(_parse_top_level(cursor, state))
     return state.bump

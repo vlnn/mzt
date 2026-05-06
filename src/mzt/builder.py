@@ -17,15 +17,34 @@ def build(asm_text: str, out_path: Path) -> Path:
     return out_path
 
 
-def build_source(source_path: Path, out_path: Path) -> Path:
-    asm = compile_to_asm(Path(source_path).read_text())
+def build_source(
+    source_path: Path,
+    out_path: Path,
+    *,
+    include_dirs: "list[Path] | None" = None,
+) -> Path:
+    src = Path(source_path)
+    asm = compile_to_asm(
+        src.read_text(),
+        source_path=src,
+        include_dirs=include_dirs,
+    )
     return build(asm, out_path)
 
 
-def compile_to_asm(source: str) -> str:
-    defs = compile_source(source)
+def compile_to_asm(
+    source: str,
+    *,
+    source_path: "Path | None" = None,
+    include_dirs: "list[Path] | None" = None,
+) -> str:
+    defs = compile_source(
+        source, source_path=source_path, include_dirs=include_dirs,
+    )
     _require_entry(defs)
-    user_memory_bytes = program_user_memory_size(source)
+    user_memory_bytes = program_user_memory_size(
+        source, source_path=source_path, include_dirs=include_dirs,
+    )
     return emit_program(optimize(defs), user_memory_bytes=user_memory_bytes)
 
 

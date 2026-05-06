@@ -37,7 +37,12 @@ class Addr:
     offset: int
 
 
-Cell = Literal | PrimRef | ColonRef | Label | Branch | StringLit | Addr
+@dataclass(frozen=True)
+class WordAddr:
+    name: str
+
+
+Cell = Literal | PrimRef | ColonRef | Label | Branch | StringLit | Addr | WordAddr
 
 
 @dataclass(frozen=True)

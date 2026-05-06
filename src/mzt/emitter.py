@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from mzt.ir import Addr, Branch, Cell, ColonDef, ColonRef, Label, Literal, PrimRef, StringLit
+from mzt.ir import Addr, Branch, Cell, ColonDef, ColonRef, Label, Literal, PrimRef, StringLit, WordAddr
 from mzt.primitives import primitive
 from mzt.runtime import runtime_epilogue, runtime_preamble
 
@@ -73,11 +73,22 @@ def _emit_cell(cell: Cell, strings: _StringTable) -> str:
         return _emit_string_lit(cell, strings)
     if isinstance(cell, Addr):
         return _emit_addr(cell)
+    if isinstance(cell, WordAddr):
+        return _emit_word_addr(cell)
     raise TypeError(f"unknown IR cell {cell!r}")
 
 
 def _word_label(name: str) -> str:
     return "_word_" + name.replace("-", "_")
+
+
+def _emit_word_addr(word: WordAddr) -> str:
+    label = _word_label(word.name)
+    return (
+        f"    adrp    x0, {label}@PAGE\n"
+        f"    add     x0, x0, {label}@PAGEOFF\n"
+        f"    str     x0, [x19, #-8]!\n"
+    )
 
 
 def _emit_addr(addr: Addr) -> str:
