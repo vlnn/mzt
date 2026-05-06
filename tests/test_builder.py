@@ -154,3 +154,24 @@ def test_build_source_raises_when_main_missing(mocker, tmp_build_dir, tmp_path):
         build_source(src, tmp_build_dir / "x")
 
     run.assert_not_called()
+
+
+def test_compile_to_asm_runs_zero_push_peephole():
+    asm = compile_to_asm(": main 0 . ;")
+    assert "ldr     x0, =0" not in asm, \
+        "after peephole, Literal(0) must not survive as an ldr =0"
+    assert "str     xzr, [x19, #-8]!" in asm, \
+        "Literal(0) should be inlined as str xzr push"
+
+
+def test_compile_to_asm_fuses_swap_drop():
+    asm = compile_to_asm(": main 1 2 swap drop . ;")
+    assert "bl      _swap" not in asm, "swap drop must be peepholed away"
+    assert "bl      _drop" not in asm, "swap drop must be peepholed away"
+    assert "bl      _nip" in asm, "swap drop must fuse to bl _nip"
+
+
+def test_nonzero_literals_still_use_ldr():
+    asm = compile_to_asm(": main 1 . ;")
+    assert "ldr     x0, =1" in asm, \
+        "non-zero literals are not affected by the zero-push rule"

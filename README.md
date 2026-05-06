@@ -9,27 +9,31 @@ IR, and peephole passes are reusable, the back end is rewritten for AArch64.
 
 ## Status
 
-**M4 — output: `emit`, `cr`, `."`.** Byte-level output via `_write` syscalls.
-Strings parsed by a character-level tokenizer so spaces inside `." …"` are
-preserved verbatim, then interned into a `__cstring` section with each
-string getting a unique `Lstr_N` label. Compiled call shape:
-`adrp x0, Lstr_N@PAGE ; add x0, x0, Lstr_N@PAGEOFF ; mov x1, #len ; bl _print_str`.
+**M5 — peephole framework + two seed rules.** Rules-as-data, sorted by
+pattern length so longer patterns always win, applied left-to-right and
+iterated to fixpoint so cascading rewrites converge in one optimize call.
+Two starter rules:
 
-Still in: 23 primitives, control flow, subroutine-threaded code, 8 KB
-data stack in `x19`.
+- `Literal(0)` → `PrimRef("zero")`, inlined as `str xzr, [x19, #-8]!`
+  (saves a 4-byte `movz` per occurrence; the `_zero:` function is omitted
+  from the runtime since it's never called via bl).
+- `swap drop` → `nip` (one `bl _nip` replaces two bl calls).
+
+New rules are appended to a list in `peephole.py`; no other code changes
+required.
+
+Still in: 24 primitives, control flow, output (`emit` `cr` `."`), 8 KB
+data stack, all of M1–M4.
 
 ## Quickstart
 
 ```bash
 uv sync
-make test                         # 319 passing on Linux / 330 on Apple Silicon
-make examples                     # macOS / Apple Silicon only
+make test                         # 348 passing on Linux / 360 on Apple Silicon
+make examples
 ./examples/hello-text             # Hello, world!
-./examples/letter                 # A
-./examples/greet                  # Hello, mzt!
 ./examples/fact                   # 120
-./examples/countdown              # 5 4 3 2 1
-./examples/ifelse                 # 42
+./examples/peephole               # 7  (exercises both rules)
 ```
 
 ## CLI
@@ -55,5 +59,6 @@ Source files must define `: main ... ;` as the entry point.
 
 ## Roadmap
 
-See `MVP_Plan` for the milestone breakdown (M0 → M6). Next up: M5
-peephole framework with the first two rules.
+See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done.
+Next up: M6 — port the portable subset of zt's examples to lock the
+language surface in.

@@ -6,6 +6,7 @@ class Primitive:
     name: str
     label: str
     body: str
+    inline: bool = False
 
 
 def _binary_op(op: str) -> str:
@@ -143,6 +144,7 @@ _CR = (
 
 _PRIMITIVES: dict[str, Primitive] = {
     p.name: p for p in [
+        Primitive("zero",   "_zero",   "    str     xzr, [x19, #-8]!\n", inline=True),
         Primitive("dup",    "_dup",    _DUP),
         Primitive("drop",   "_drop",   _DROP),
         Primitive("swap",   "_swap",   _SWAP),

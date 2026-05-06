@@ -43,7 +43,10 @@ def _emit_cell(cell: Cell, strings: _StringTable) -> str:
     if isinstance(cell, Literal):
         return _emit_literal(cell)
     if isinstance(cell, PrimRef):
-        return f"    bl      {primitive(cell.name).label}\n"
+        prim = primitive(cell.name)
+        if prim.inline:
+            return prim.body
+        return f"    bl      {prim.label}\n"
     if isinstance(cell, ColonRef):
         return f"    bl      _word_{cell.name}\n"
     if isinstance(cell, Label):

@@ -28,6 +28,7 @@ apple_silicon_only = pytest.mark.skipif(
         ("hello-text.fs", "Hello, world!\n"),
         ("letter.fs",     "A\n"),
         ("greet.fs",      "Hello, mzt!\n"),
+        ("peephole.fs",   "7\n"),
     ],
 )
 def test_compiles_and_runs(tmp_build_dir, source_name, expected_stdout):

@@ -4,6 +4,7 @@ from pathlib import Path
 from mzt.compiler import CompileError, compile_source
 from mzt.emitter import emit_program
 from mzt.ir import ColonDef
+from mzt.peephole import optimize
 
 
 ENTRY_WORD = "main"
@@ -24,7 +25,7 @@ def build_source(source_path: Path, out_path: Path) -> Path:
 def compile_to_asm(source: str) -> str:
     defs = compile_source(source)
     _require_entry(defs)
-    return emit_program(defs)
+    return emit_program(optimize(defs))
 
 
 def _require_entry(defs: list[ColonDef]) -> None:

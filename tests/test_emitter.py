@@ -219,3 +219,24 @@ def test_byte_length_uses_utf8_byte_count():
     asm = _emit_main(StringLit("é"))
     assert "mov     x1, #2" in asm, \
         "string length should be UTF-8 byte length, not Python char count"
+
+
+def test_inline_primitive_does_not_emit_bl():
+    asm = _emit_main(PrimRef("zero"))
+    assert "bl      _zero" not in asm, \
+        "an inline primitive must be expanded at the call site, not invoked via bl"
+    assert "str     xzr, [x19, #-8]!" in asm, \
+        "PrimRef('zero') should inline its body (str xzr push) directly"
+
+
+def test_runtime_does_not_define_inline_primitive_function():
+    asm = _emit_main()
+    assert "_zero:" not in asm, \
+        "inline primitives have no callers via bl; the runtime must not waste " \
+        "bytes emitting _zero: as a callable function"
+
+
+def test_non_inline_primitives_still_emit_bl():
+    asm = _emit_main(PrimRef("dup"))
+    assert "bl      _dup" in asm, \
+        "non-inline primitives must still be invoked via bl"

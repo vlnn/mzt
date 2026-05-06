@@ -10,6 +10,7 @@ M2_NAMES = [
     "and", "or", "xor", "invert",
     "negate", "abs",
     ".", "emit", "cr",
+    "zero",
 ]
 
 
@@ -46,3 +47,14 @@ def test_primitive_labels_are_unique():
     labels = [p.label for p in all_primitives()]
     assert len(set(labels)) == len(labels), \
         "every primitive must have a distinct asm label to avoid linker collisions"
+
+
+def test_zero_is_inline_only():
+    assert primitive("zero").inline is True, \
+        "zero is intended to be inlined at the call site, not invoked via bl"
+
+
+def test_zero_is_the_only_inline_primitive_at_m5():
+    inline_names = {p.name for p in all_primitives() if p.inline}
+    assert inline_names == {"zero"}, \
+        f"only 'zero' should be inline at M5, got {inline_names}"
