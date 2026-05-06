@@ -65,6 +65,12 @@ def _rodata() -> str:
         "\n.section __TEXT,__cstring,cstring_literals\n"
         "Lfmt_dot:\n"
         '    .asciz  "%lld\\n"\n'
+        "Lfmt_dump_dstack:\n"
+        '    .asciz  "DSTACK %lld\\n"\n'
+        "Lfmt_dump_rstack:\n"
+        '    .asciz  "RSTACK %lld\\n"\n'
+        "Lfmt_dump_cell:\n"
+        '    .asciz  "%lld\\n"\n'
     )
 
 

@@ -23,8 +23,8 @@ def test_clang_executor_builds_session_source_plus_main_expression(mocker):
     program_text = build_text.call_args.args[0]
     assert ": dbl 2 * ;" in program_text, \
         f"built program should include session source; got {program_text!r}"
-    assert ": main 3 dbl . ;" in program_text, \
-        f"built program should wrap the expression in a synthetic main; got {program_text!r}"
+    assert ": main 3 dbl . " in program_text, \
+        f"built program should wrap the expression in a synthetic main starting with the expression; got {program_text!r}"
 
 
 def test_clang_executor_passes_include_dirs_through_to_builder(mocker, tmp_path):

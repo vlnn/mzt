@@ -277,6 +277,65 @@ _KEY = (
 )
 
 
+_DUMP_STACKS = (
+    "    stp     x29, x30, [sp, #-16]!\n"
+    "    mov     x29, sp\n"
+    "    stp     x21, x22, [sp, #-16]!\n"
+    "    adrp    x0, Lfmt_dump_dstack@PAGE\n"
+    "    add     x0, x0, Lfmt_dump_dstack@PAGEOFF\n"
+    "    adrp    x21, Ldstack_base@PAGE\n"
+    "    add     x21, x21, Ldstack_base@PAGEOFF\n"
+    f"    add     x21, x21, #{8192}\n"
+    "    sub     x1, x21, x19\n"
+    "    asr     x1, x1, #3\n"
+    "    sub     sp, sp, #16\n"
+    "    str     x1, [sp]\n"
+    "    bl      _printf\n"
+    "    add     sp, sp, #16\n"
+    "    sub     x22, x21, #8\n"
+    "Ldump_d_loop:\n"
+    "    cmp     x22, x19\n"
+    "    b.lt    Ldump_d_done\n"
+    "    ldr     x1, [x22]\n"
+    "    sub     sp, sp, #16\n"
+    "    str     x1, [sp]\n"
+    "    adrp    x0, Lfmt_dump_cell@PAGE\n"
+    "    add     x0, x0, Lfmt_dump_cell@PAGEOFF\n"
+    "    bl      _printf\n"
+    "    add     sp, sp, #16\n"
+    "    sub     x22, x22, #8\n"
+    "    b       Ldump_d_loop\n"
+    "Ldump_d_done:\n"
+    "    adrp    x0, Lfmt_dump_rstack@PAGE\n"
+    "    add     x0, x0, Lfmt_dump_rstack@PAGEOFF\n"
+    "    adrp    x21, Lrstack_base@PAGE\n"
+    "    add     x21, x21, Lrstack_base@PAGEOFF\n"
+    f"    add     x21, x21, #{4096}\n"
+    "    sub     x1, x21, x20\n"
+    "    asr     x1, x1, #3\n"
+    "    sub     sp, sp, #16\n"
+    "    str     x1, [sp]\n"
+    "    bl      _printf\n"
+    "    add     sp, sp, #16\n"
+    "    sub     x22, x21, #8\n"
+    "Ldump_r_loop:\n"
+    "    cmp     x22, x20\n"
+    "    b.lt    Ldump_r_done\n"
+    "    ldr     x1, [x22]\n"
+    "    sub     sp, sp, #16\n"
+    "    str     x1, [sp]\n"
+    "    adrp    x0, Lfmt_dump_cell@PAGE\n"
+    "    add     x0, x0, Lfmt_dump_cell@PAGEOFF\n"
+    "    bl      _printf\n"
+    "    add     sp, sp, #16\n"
+    "    sub     x22, x22, #8\n"
+    "    b       Ldump_r_loop\n"
+    "Ldump_r_done:\n"
+    "    ldp     x21, x22, [sp], #16\n"
+    "    ldp     x29, x30, [sp], #16\n"
+)
+
+
 _PRIMITIVES: dict[str, Primitive] = {
     p.name: p for p in [
         Primitive("zero",   "_zero",   "    str     xzr, [x19, #-8]!\n", inline=True),
@@ -321,6 +380,7 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive("execute", "_execute",        _EXECUTE),
         Primitive("halt",    "_halt",           _HALT),
         Primitive("key",     "_key",            _KEY),
+        Primitive("__dump-stacks", "_dump_stacks", _DUMP_STACKS),
     ]
 }
 

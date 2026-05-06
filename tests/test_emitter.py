@@ -197,15 +197,17 @@ def test_string_content_interned_in_cstring_section():
 def test_each_string_lit_is_nul_terminated():
     from mzt.ir import StringLit
     asm = _emit_main(StringLit("Hello, "), StringLit("mzt"), StringLit("!"))
+    user_string_section_idx = asm.find("Lstr_0:")
+    user_string_section = asm[user_string_section_idx:]
     user_string_asciz = sum(
-        1 for line in asm.splitlines() if line.lstrip().startswith(".asciz")
+        1 for line in user_string_section.splitlines()
+        if line.lstrip().startswith(".asciz")
     )
-    assert user_string_asciz == 4, \
-        "every interned user string plus the runtime printf format must use .asciz: " \
+    assert user_string_asciz == 3, \
+        "every interned user string must use .asciz: " \
         "without the trailing NUL the __TEXT,__cstring linker collapses adjacent " \
         "strings into one and remaps later Lstr_N labels to the start of the merged blob"
-    user_string_section_idx = asm.find("Lstr_0:")
-    user_strings = asm[user_string_section_idx:]
+    user_strings = user_string_section
     assert ".ascii " not in user_strings, \
         "user-string section must not contain .ascii (no NUL) — only .asciz"
 
