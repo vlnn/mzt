@@ -49,3 +49,4 @@ Cell = Literal | PrimRef | ColonRef | Label | Branch | StringLit | Addr | WordAd
 class ColonDef:
     name: str
     body: tuple[Cell, ...]
+    source_text: str | None = None

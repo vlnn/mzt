@@ -19,6 +19,8 @@ class Token:
     col: int = 1
     source: str = "<input>"
     raw: str | None = None
+    start_offset: int = 0
+    end_offset: int = 0
 
     def __post_init__(self) -> None:
         if self.raw is None:
@@ -45,6 +47,7 @@ def tokenize(text: str, source: str = "<input>") -> list[Token]:
         cursor.skip_whitespace()
         if cursor.eof():
             break
+        token_start = cursor.pos
         if cursor.match_word("\\"):
             cursor.skip_to_newline()
             continue
@@ -52,7 +55,7 @@ def tokenize(text: str, source: str = "<input>") -> list[Token]:
             cursor.skip_paren_comment()
             continue
         if cursor.match_word(_DOT_QUOTE):
-            tokens.append(cursor.read_string_token())
+            tokens.append(cursor.read_string_token(token_start))
             continue
         tokens.append(cursor.read_word_token())
     return tokens
@@ -107,7 +110,7 @@ class _Cursor:
         self._advance(len(word))
         return True
 
-    def read_string_token(self) -> Token:
+    def read_string_token(self, token_start: int) -> Token:
         opening_line, opening_col = self.line, self.col
         if not self.eof() and self.text[self.pos] == " ":
             self._advance()
@@ -120,25 +123,32 @@ class _Cursor:
             )
         content = self.text[start:self.pos]
         self._advance()
-        return Token(TokenKind.STRING, content, opening_line, opening_col, self.source, raw=content)
+        end = self.pos
+        return Token(
+            TokenKind.STRING, content, opening_line, opening_col, self.source,
+            raw=self.text[token_start:end],
+            start_offset=token_start, end_offset=end,
+        )
 
     def read_word_token(self) -> Token:
         word_line, word_col = self.line, self.col
         start = self.pos
         while not self.eof() and not self.text[self.pos].isspace():
             self._advance()
-        raw = self.text[start:self.pos]
-        return _classify(raw, word_line, word_col, self.source)
+        end = self.pos
+        raw = self.text[start:end]
+        return _classify(raw, word_line, word_col, self.source, start, end)
 
 
-def _classify(word: str, line: int, col: int, source: str) -> Token:
+def _classify(word: str, line: int, col: int, source: str, start: int, end: int) -> Token:
+    common = dict(line=line, col=col, source=source, raw=word, start_offset=start, end_offset=end)
     if word == ":":
-        return Token(TokenKind.COLON, ":", line, col, source, raw=word)
+        return Token(TokenKind.COLON, ":", **common)
     if word == ";":
-        return Token(TokenKind.SEMI, ";", line, col, source, raw=word)
+        return Token(TokenKind.SEMI, ";", **common)
     if _NUMBER_RE.match(word):
-        return Token(TokenKind.NUMBER, _parse_number(word), line, col, source, raw=word)
-    return Token(TokenKind.WORD, word, line, col, source, raw=word)
+        return Token(TokenKind.NUMBER, _parse_number(word), **common)
+    return Token(TokenKind.WORD, word, **common)
 
 
 def _parse_number(word: str) -> int:

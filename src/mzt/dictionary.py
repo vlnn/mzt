@@ -12,6 +12,7 @@ class WordInfo:
     kind: WordKind
     source: str
     line: int
+    source_text: str | None = None
 
 
 class Dictionary:
@@ -31,8 +32,18 @@ class Dictionary:
     def get(self, name: str) -> WordInfo | None:
         return self._words.get(name)
 
-    def register(self, name: str, *, kind: WordKind, source: str, line: int) -> WordInfo:
-        info = WordInfo(name=name, kind=kind, source=source, line=line)
+    def register(
+        self,
+        name: str,
+        *,
+        kind: WordKind,
+        source: str,
+        line: int,
+        source_text: str | None = None,
+    ) -> WordInfo:
+        info = WordInfo(
+            name=name, kind=kind, source=source, line=line, source_text=source_text,
+        )
         self._words[name] = info
         return info
 

@@ -52,6 +52,7 @@ class _ProgramState:
     next_noname_id: int = 0
     resolver: IncludeResolver = field(default_factory=IncludeResolver)
     current_source_path: "Path | None" = None
+    source_texts: dict[str, str] = field(default_factory=dict)
 
     def claim_address(self, size: int) -> int:
         offset = self.bump
@@ -63,6 +64,14 @@ class _ProgramState:
         self.next_noname_id += 1
         return name
 
+    def slice_source(self, start: Token, end: Token) -> str | None:
+        if start.source != end.source:
+            return None
+        text = self.source_texts.get(start.source)
+        if text is None:
+            return None
+        return text[start.start_offset:end.end_offset]
+
 
 def compile_source(
     source: str,
@@ -70,10 +79,12 @@ def compile_source(
     source_path: "Path | None" = None,
     include_dirs: "list[Path] | None" = None,
 ) -> list[ColonDef]:
+    source_name = str(source_path) if source_path else "<input>"
     return compile_tokens(
-        tokenize(source, source=str(source_path) if source_path else "<input>"),
+        tokenize(source, source=source_name),
         source_path=source_path,
         include_dirs=include_dirs,
+        source_text=source,
     )
 
 
@@ -82,12 +93,16 @@ def compile_tokens(
     *,
     source_path: "Path | None" = None,
     include_dirs: "list[Path] | None" = None,
+    source_text: str | None = None,
 ) -> list[ColonDef]:
     cursor = _PeekableTokens(tokens)
     state = _ProgramState(
         resolver=IncludeResolver(include_dirs=include_dirs),
         current_source_path=source_path,
     )
+    if source_text is not None:
+        source_name = str(source_path) if source_path else "<input>"
+        state.source_texts[source_name] = source_text
     if source_path is not None:
         state.resolver.mark_seen(Path(source_path).resolve())
     top_level = list(_parse_top_level(cursor, state))
@@ -127,10 +142,52 @@ def _parse_top_level(cursor: "_PeekableTokens", state: _ProgramState) -> Iterato
         if token.kind == TokenKind.WORD and token.value == "include":
             yield from _process_include(cursor, token, state)
             continue
+        if token.kind == TokenKind.WORD and token.value == "synonym":
+            yield _parse_synonym(cursor, token, state)
+            continue
         raise CompileError(
             f"line {token.line}: expected ':', 'variable', or 'create' at top level, "
             f"got {token.value!r}"
         )
+
+
+def _parse_synonym(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
+    new_name = _read_synonym_name(cursor, keyword)
+    _check_name_available(new_name, keyword, state)
+    target_cell = _read_synonym_target(cursor, keyword, state)
+    source_text = state.slice_source(keyword, cursor.last_consumed())
+    state.dictionary.register(
+        new_name, kind="colon", source=keyword.source, line=keyword.line,
+        source_text=source_text,
+    )
+    return ColonDef(name=new_name, body=(target_cell,), source_text=source_text)
+
+
+def _read_synonym_name(cursor: "_PeekableTokens", keyword: Token) -> str:
+    name_token = cursor.next() if not cursor.eof() else None
+    if name_token is None or name_token.kind != TokenKind.WORD:
+        raise CompileError(
+            f"line {keyword.line}: 'synonym' must be followed by a new name"
+        )
+    return name_token.value
+
+
+def _read_synonym_target(
+    cursor: "_PeekableTokens", keyword: Token, state: _ProgramState,
+) -> "PrimRef | ColonRef":
+    target_token = cursor.next() if not cursor.eof() else None
+    if target_token is None or target_token.kind != TokenKind.WORD:
+        raise CompileError(
+            f"line {keyword.line}: 'synonym' must be followed by 'new-name target-name'"
+        )
+    target = target_token.value
+    if is_primitive(target):
+        return PrimRef(target)
+    if target in state.dictionary:
+        return ColonRef(target)
+    raise CompileError(
+        f"line {keyword.line}: 'synonym' target {target!r} is not defined"
+    )
 
 
 def _next_is_constant(cursor: "_PeekableTokens") -> bool:
@@ -143,16 +200,24 @@ def _parse_constant(
 ) -> ColonDef:
     name = _read_definition_name(cursor, keyword, "constant")
     _check_name_available(name, keyword, state)
-    state.dictionary.register(name, kind="constant", source=keyword.source, line=keyword.line)
-    return ColonDef(name=name, body=(Literal(value_token.value),))
+    source_text = state.slice_source(value_token, cursor.last_consumed())
+    state.dictionary.register(
+        name, kind="constant", source=keyword.source, line=keyword.line,
+        source_text=source_text,
+    )
+    return ColonDef(name=name, body=(Literal(value_token.value),), source_text=source_text)
 
 
 def _parse_variable(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
     name = _read_definition_name(cursor, keyword, "variable")
     _check_name_available(name, keyword, state)
     offset = state.claim_address(CELL_BYTES)
-    state.dictionary.register(name, kind="variable", source=keyword.source, line=keyword.line)
-    return ColonDef(name=name, body=(Addr(offset),))
+    source_text = state.slice_source(keyword, cursor.last_consumed())
+    state.dictionary.register(
+        name, kind="variable", source=keyword.source, line=keyword.line,
+        source_text=source_text,
+    )
+    return ColonDef(name=name, body=(Addr(offset),), source_text=source_text)
 
 
 def _parse_create(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
@@ -160,8 +225,12 @@ def _parse_create(cursor: "_PeekableTokens", keyword: Token, state: _ProgramStat
     _check_name_available(name, keyword, state)
     offset = state.bump
     _consume_optional_allot(cursor, state)
-    state.dictionary.register(name, kind="create", source=keyword.source, line=keyword.line)
-    return ColonDef(name=name, body=(Addr(offset),))
+    source_text = state.slice_source(keyword, cursor.last_consumed())
+    state.dictionary.register(
+        name, kind="create", source=keyword.source, line=keyword.line,
+        source_text=source_text,
+    )
+    return ColonDef(name=name, body=(Addr(offset),), source_text=source_text)
 
 
 def _consume_optional_allot(cursor: "_PeekableTokens", state: _ProgramState) -> None:
@@ -215,10 +284,12 @@ def _parse_colon(cursor: "_PeekableTokens", colon_token: Token, state: _ProgramS
     _check_name_available(name_token.value, colon_token, state)
     body_state = _BodyState(labels=state.labels, current_name=name_token.value)
     body = _parse_body(cursor, name_token, body_state, state)
+    source_text = state.slice_source(colon_token, cursor.last_consumed())
     state.dictionary.register(
-        name_token.value, kind="colon", source=colon_token.source, line=colon_token.line
+        name_token.value, kind="colon", source=colon_token.source, line=colon_token.line,
+        source_text=source_text,
     )
-    return ColonDef(name=name_token.value, body=body)
+    return ColonDef(name=name_token.value, body=body, source_text=source_text)
 
 
 def _parse_body(
@@ -255,6 +326,11 @@ def _consume_token(token: Token, state: _BodyState, name_token: Token) -> None:
     if token.kind == TokenKind.WORD and token.value == "include":
         raise CompileError(
             f"line {token.line}: 'include' must appear at top level, "
+            f"not inside ':{name_token.value}'"
+        )
+    if token.kind == TokenKind.WORD and token.value == "synonym":
+        raise CompileError(
+            f"line {token.line}: 'synonym' must appear at top level, "
             f"not inside ':{name_token.value}'"
         )
     if token.kind == TokenKind.WORD and token.value in _CONTROL_HANDLERS:
@@ -311,6 +387,7 @@ def _process_include(
         return
     state.resolver.mark_seen(path)
     text = path.read_text()
+    state.source_texts[str(path)] = text
     sub_tokens = tokenize(text, source=str(path))
     sub_cursor = _PeekableTokens(sub_tokens)
     previous_path = state.current_source_path
@@ -536,6 +613,9 @@ class _PeekableTokens:
         if idx >= len(self.tokens):
             return None
         return self.tokens[idx]
+
+    def last_consumed(self) -> Token:
+        return self.tokens[self.pos - 1]
 
 
 def program_user_memory_size(
