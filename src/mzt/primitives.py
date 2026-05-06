@@ -259,6 +259,24 @@ _HALT = (
 )
 
 
+_KEY = (
+    "    stp     x29, x30, [sp, #-16]!\n"
+    "    mov     x29, sp\n"
+    "    sub     sp, sp, #16\n"
+    "    mov     x0, #0\n"
+    "    mov     x1, sp\n"
+    "    mov     x2, #1\n"
+    "    bl      _read\n"
+    "    ldrb    w1, [sp]\n"
+    "    mov     x2, #-1\n"
+    "    cmp     x0, #1\n"
+    "    csel    x0, x1, x2, eq\n"
+    "    str     x0, [x19, #-8]!\n"
+    "    add     sp, sp, #16\n"
+    "    ldp     x29, x30, [sp], #16\n"
+)
+
+
 _PRIMITIVES: dict[str, Primitive] = {
     p.name: p for p in [
         Primitive("zero",   "_zero",   "    str     xzr, [x19, #-8]!\n", inline=True),
@@ -302,6 +320,7 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive("j",       "_loop_j",         _LOOP_J),
         Primitive("execute", "_execute",        _EXECUTE),
         Primitive("halt",    "_halt",           _HALT),
+        Primitive("key",     "_key",            _KEY),
     ]
 }
 

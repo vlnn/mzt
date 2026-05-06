@@ -1,7 +1,7 @@
 FS_EXAMPLES := $(patsubst %.fs,%,$(wildcard examples/*.fs))
 FORTH_TESTS := $(wildcard tests/forth/test_*.fs)
 
-.PHONY: test forth-test examples bench clean
+.PHONY: test forth-test examples bench corgi clean
 
 test:
 	uv run pytest
@@ -29,6 +29,16 @@ bench: examples/bench-fib examples/bench-pi
 	@echo
 	@echo "=== bench-pi  (expect: 31416020) ==="
 	@time ./examples/bench-pi
+
+# Build and run the corgi adventure scripted playthrough. Lives in a
+# subdirectory, so the generic examples/% rule doesn't reach it.
+CORGI_SRC := examples/corgi/main.fs examples/corgi/interactive.fs examples/corgi/game.fs examples/corgi/world.fs
+
+examples/corgi/main: $(CORGI_SRC)
+	uv run mzt build examples/corgi/main.fs -o $@
+
+corgi: examples/corgi/main
+	./examples/corgi/main
 
 clean:
 	rm -rf .pytest_cache build dist *.egg-info

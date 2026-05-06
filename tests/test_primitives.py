@@ -17,6 +17,7 @@ M2_NAMES = [
     "(do)", "(loop)", "(+loop)", "unloop", "i", "j",
     "execute",
     "halt",
+    "key",
 ]
 
 
@@ -109,6 +110,7 @@ _LOCKED_LABELS = {
     "j":       "_loop_j",
     "execute": "_execute",
     "halt":    "_halt",
+    "key":     "_key",
 }
 
 
