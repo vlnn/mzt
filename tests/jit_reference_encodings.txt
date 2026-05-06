@@ -1,0 +1,75 @@
+# ARM64 reference encodings used by tests/test_jit_assembler.py.
+#
+# Source of truth: tests/_jit_reference_data.py.
+# Regenerate: python scripts/regen_jit_reference.py
+# Verify on Apple Silicon: python scripts/verify_jit_encodings.py
+#
+# Each line: <hex>  <mnemonic>
+
+D65F03C0  ret
+D65F0000  ret x0
+D65F03A0  ret x29
+D61F0120  br x9
+D61F0260  br x19
+94000000  bl #0
+94000001  bl #4
+97FFFFFF  bl #-4
+94000064  bl #400
+14000000  b #0
+14000001  b #4
+17FFFFFF  b #-4
+54000000  b.eq #0
+54000020  b.eq #4
+54000001  b.ne #0
+5400000B  b.lt #0
+5400002B  b.lt #4
+54FFFFEB  b.lt #-4
+B4000000  cbz x0, #0
+B4000020  cbz x0, #4
+B4000013  cbz x19, #0
+B5000000  cbnz x0, #0
+D2800540  movz x0, #42
+D2800015  movz x21, #0
+D2A00200  movz x0, #16, lsl #16
+D2C00200  movz x0, #16, lsl #32
+D2E00200  movz x0, #16, lsl #48
+F2800540  movk x0, #42
+92800000  movn x0, #0
+92800020  movn x0, #1
+91000000  add x0, x0, #0
+91000400  add x0, x0, #1
+91002000  add x0, x0, #8
+910003FD  mov x29, sp
+D1002000  sub x0, x0, #8
+D1002273  sub x19, x19, #8
+8B000000  add x0, x0, x0
+8B010000  add x0, x0, x1
+CB010000  sub x0, x0, x1
+90000000  adrp x0, #0
+90000001  adrp x1, #0
+F81F8E60  str x0, [x19, #-8]!
+F81F8FE0  str x0, [sp, #-8]!
+F8008660  str x0, [x19], #8
+F9000000  str x0, [x0]
+F9000260  str x0, [x19]
+F9000660  str x0, [x19, #8]
+F9000A60  str x0, [x19, #16]
+F81F8E7F  str xzr, [x19, #-8]!
+F85F8E60  ldr x0, [x19, #-8]!
+F8408660  ldr x0, [x19], #8
+F9400260  ldr x0, [x19]
+F9400660  ldr x0, [x19, #8]
+F9400A60  ldr x0, [x19, #16]
+A9BF7BFD  stp x29, x30, [sp, #-16]!
+A8C17BFD  ldp x29, x30, [sp], #16
+A9000260  stp x0, x0, [x19]
+A9000660  stp x0, x1, [x19]
+A9400660  ldp x0, x1, [x19]
+A9410660  ldp x0, x1, [x19, #16]
+F100001F  cmp x0, #0
+F100027F  cmp x19, #0
+EB00003F  cmp x1, x0
+EB00027F  cmp x19, x0
+AA0003E0  mov x0, x0
+AA1303E0  mov x0, x19
+AA0003F3  mov x19, x0

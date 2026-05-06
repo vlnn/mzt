@@ -116,6 +116,64 @@ Source files must define `: main ... ;` as the entry point.
   Skipped on non-Apple-Silicon machines (clang produces Mach-O arm64
   binaries that only run there).
 
+## JIT backend (work in progress)
+
+A REPL-oriented JIT backend lives at `src/mzt/jit/` alongside the
+clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–2.
+
+**Step 1 — JIT memory region.** `JitRegion` wraps `mmap(MAP_JIT)` plus
+`pthread_jit_write_protect_np`, exposes a `with region.writable():`
+context that brackets every write, and flushes the icache before
+handing control back. Append-only; no relocation table; instruction-
+aligned cursor. `tests/test_jit_region.py` covers the pure-logic side
+with a fake libc and the platform side with real `mmap` (skipped off
+Apple Silicon).
+
+**Step 2 — minimal ARM64 byte assembler.** `src/mzt/jit/assembler.py`
+exposes one pure encoder per instruction form the IR emits — `ret`,
+`bl`, `b`, `b.cond`, `cbz`/`cbnz`, `movz`/`movk`/`movn`, `add`/`sub`
+(immediate and register), `adrp`, `str`/`ldr` in three addressing
+modes, `stp`/`ldp` pre-indexed and offset, `cmp`, `mov`, plus a
+`movz_imm64` helper that lowers an arbitrary 64-bit constant to a
+`movz`+`movk` tower with zero chunks skipped. Encodings are
+parametrised against `tests/_jit_reference_data.py` (the source of
+truth) and a generated audit file `tests/jit_reference_encodings.txt`.
+
+`scripts/verify_jit_encodings.py` rounds the reference set through
+`clang -c` and compares per-mnemonic — closes the loop on "verified
+against the assembler we ship with". Requires clang.
+
+`scripts/regen_jit_reference.py` regenerates the audit file when
+encoders change.
+
+### Smoke test on Apple Silicon
+
+The host Python binary needs the JIT entitlement. Once per dev
+machine:
+
+```bash
+cat > /tmp/jit.plist <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key><true/>
+</dict>
+</plist>
+PLIST
+codesign --entitlements /tmp/jit.plist --force -s - "$(uv run python -c 'import sys; print(sys.executable)')"
+```
+
+Then:
+
+```bash
+uv run python examples/jit_smoke.py     # JIT'd function returned 42
+uv run python scripts/verify_jit_encodings.py
+```
+
+Without the entitlement, every `mmap(MAP_JIT)` call returns
+`MAP_FAILED` and the smoke test prints an allocation error.
+
 ## Roadmap
 
 See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done
@@ -133,7 +191,8 @@ Beyond `next_step`:
   the portable subsets).
 - Profiler (`mach_absolute_time` deltas), debug-map output,
   primitive inlining, tree-shaking.
-- Eventually: REPL with runtime word compilation
-  (`MAP_JIT`/`pthread_jit_write_protect_np`/JIT entitlement).
 - Eventually: hand-rolled Mach-O + ad-hoc signing (drops the clang
   dependency).
+- In progress: REPL with runtime word compilation
+  (`MAP_JIT`/`pthread_jit_write_protect_np`/JIT entitlement). Steps
+  1–2 of `JIT_Plan` shipped; see "JIT backend" above.

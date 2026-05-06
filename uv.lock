@@ -33,6 +33,7 @@ dev = [
 ]
 
 [package.metadata]
+provides-extras = ["jit"]
 
 [package.metadata.requires-dev]
 dev = [
