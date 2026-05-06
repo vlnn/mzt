@@ -4,6 +4,9 @@ from pathlib import Path
 
 from mzt.builder import build_source
 from mzt.compiler import CompileError
+from mzt.repl import Repl
+from mzt.repl_driver import run_interactive
+from mzt.repl_executor import ClangExecutor
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -11,6 +14,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.cmd == "build":
         return _run_build(args.source, args.output)
+    if args.cmd == "repl":
+        return _run_repl(args.include_dirs)
     parser.error(f"unknown command {args.cmd!r}")
     return 2
 
@@ -21,6 +26,15 @@ def _build_parser() -> argparse.ArgumentParser:
     build = sub.add_parser("build", help="compile a .fs source file to a native binary")
     build.add_argument("source", type=Path, help="path to the .fs source file")
     build.add_argument("-o", "--output", type=Path, required=True, help="output binary path")
+    repl = sub.add_parser("repl", help="start an interactive REPL session")
+    repl.add_argument(
+        "-I", "--include-dir",
+        dest="include_dirs",
+        action="append",
+        type=Path,
+        default=[],
+        help="extra directory to search for include files",
+    )
     return parser
 
 
@@ -30,6 +44,12 @@ def _run_build(source: Path, output: Path) -> int:
     except CompileError as err:
         sys.stderr.write(f"mzt: compile error: {err}\n")
         return 1
+    return 0
+
+
+def _run_repl(include_dirs: list[Path]) -> int:
+    repl = Repl(executor=ClangExecutor(), include_dirs=include_dirs)
+    run_interactive(repl, stdin=sys.stdin, stdout=sys.stdout)
     return 0
 
 

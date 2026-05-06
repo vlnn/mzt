@@ -44,7 +44,7 @@ class _BodyState:
 
 
 @dataclass
-class _ProgramState:
+class ProgramState:
     bump: int = 0
     dictionary: Dictionary = field(default_factory=Dictionary)
     labels: _LabelGen = field(default_factory=_LabelGen)
@@ -53,6 +53,8 @@ class _ProgramState:
     resolver: IncludeResolver = field(default_factory=IncludeResolver)
     current_source_path: "Path | None" = None
     source_texts: dict[str, str] = field(default_factory=dict)
+    allow_redefinition: bool = False
+    warnings: list[str] = field(default_factory=list)
 
     def claim_address(self, size: int) -> int:
         offset = self.bump
@@ -71,6 +73,9 @@ class _ProgramState:
         if text is None:
             return None
         return text[start.start_offset:end.end_offset]
+
+
+_ProgramState = ProgramState
 
 
 def compile_source(
@@ -94,19 +99,44 @@ def compile_tokens(
     source_path: "Path | None" = None,
     include_dirs: "list[Path] | None" = None,
     source_text: str | None = None,
+    state: "ProgramState | None" = None,
 ) -> list[ColonDef]:
     cursor = _PeekableTokens(tokens)
-    state = _ProgramState(
-        resolver=IncludeResolver(include_dirs=include_dirs),
-        current_source_path=source_path,
-    )
+    owned_state = state is None
+    if state is None:
+        state = ProgramState(
+            resolver=IncludeResolver(include_dirs=include_dirs),
+            current_source_path=source_path,
+        )
+    elif include_dirs is not None:
+        state.resolver.add_include_dirs(include_dirs)
     if source_text is not None:
         source_name = str(source_path) if source_path else "<input>"
         state.source_texts[source_name] = source_text
     if source_path is not None:
         state.resolver.mark_seen(Path(source_path).resolve())
+    if owned_state:
+        top_level = list(_parse_top_level(cursor, state))
+        return top_level + state.synthetic_defs
+    synthetic_before = len(state.synthetic_defs)
     top_level = list(_parse_top_level(cursor, state))
-    return top_level + state.synthetic_defs
+    new_synthetic = state.synthetic_defs[synthetic_before:]
+    return top_level + new_synthetic
+
+
+def compile_increment(
+    source: str,
+    *,
+    state: ProgramState,
+    source_name: str = "<repl>",
+    include_dirs: "list[Path] | None" = None,
+) -> list[ColonDef]:
+    state.source_texts[source_name] = source
+    return compile_tokens(
+        tokenize(source, source=source_name),
+        state=state,
+        include_dirs=include_dirs,
+    )
 
 
 def _parse_top_level(cursor: "_PeekableTokens", state: _ProgramState) -> Iterator[ColonDef]:
@@ -153,7 +183,7 @@ def _parse_top_level(cursor: "_PeekableTokens", state: _ProgramState) -> Iterato
 
 def _parse_synonym(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
     new_name = _read_synonym_name(cursor, keyword)
-    _check_name_available(new_name, keyword, state)
+    _check_name_available(new_name, keyword, state, new_kind="colon")
     target_cell = _read_synonym_target(cursor, keyword, state)
     source_text = state.slice_source(keyword, cursor.last_consumed())
     state.dictionary.register(
@@ -199,7 +229,7 @@ def _parse_constant(
     cursor: "_PeekableTokens", value_token: Token, keyword: Token, state: _ProgramState,
 ) -> ColonDef:
     name = _read_definition_name(cursor, keyword, "constant")
-    _check_name_available(name, keyword, state)
+    _check_name_available(name, keyword, state, new_kind="constant")
     source_text = state.slice_source(value_token, cursor.last_consumed())
     state.dictionary.register(
         name, kind="constant", source=keyword.source, line=keyword.line,
@@ -210,7 +240,7 @@ def _parse_constant(
 
 def _parse_variable(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
     name = _read_definition_name(cursor, keyword, "variable")
-    _check_name_available(name, keyword, state)
+    _check_name_available(name, keyword, state, new_kind="variable")
     offset = state.claim_address(CELL_BYTES)
     source_text = state.slice_source(keyword, cursor.last_consumed())
     state.dictionary.register(
@@ -222,7 +252,7 @@ def _parse_variable(cursor: "_PeekableTokens", keyword: Token, state: _ProgramSt
 
 def _parse_create(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
     name = _read_definition_name(cursor, keyword, "create")
-    _check_name_available(name, keyword, state)
+    _check_name_available(name, keyword, state, new_kind="create")
     offset = state.bump
     _consume_optional_allot(cursor, state)
     source_text = state.slice_source(keyword, cursor.last_consumed())
@@ -260,7 +290,12 @@ def _read_definition_name(cursor: "_PeekableTokens", keyword: Token, kind: str) 
     return name_token.value
 
 
-def _check_name_available(name: str, keyword: Token, state: _ProgramState) -> None:
+_REPLACEABLE_KINDS = {"colon"}
+
+
+def _check_name_available(
+    name: str, keyword: Token, state: _ProgramState, *, new_kind: str = "colon",
+) -> None:
     if name in _CONTROL_HANDLERS:
         raise CompileError(
             f"line {keyword.line}: cannot define {name!r} — it is a control-flow keyword"
@@ -270,11 +305,23 @@ def _check_name_available(name: str, keyword: Token, state: _ProgramState) -> No
             f"line {keyword.line}: cannot define {name!r} — it is a built-in primitive"
         )
     previous = state.dictionary.get(name)
-    if previous is not None:
+    if previous is None:
+        return
+    if not state.allow_redefinition:
         raise CompileError(
             f"line {keyword.line}: {name!r} is already defined "
             f"(first defined at {previous.source}:{previous.line})"
         )
+    if previous.kind not in _REPLACEABLE_KINDS or new_kind not in _REPLACEABLE_KINDS:
+        raise CompileError(
+            f"line {keyword.line}: cannot redefine {name!r} as {new_kind} "
+            f"(previously defined as {previous.kind} at "
+            f"{previous.source}:{previous.line})"
+        )
+    state.warnings.append(
+        f"line {keyword.line}: redefining {name!r} "
+        f"(first defined at {previous.source}:{previous.line})"
+    )
 
 
 def _parse_colon(cursor: "_PeekableTokens", colon_token: Token, state: _ProgramState) -> ColonDef:

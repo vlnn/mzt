@@ -35,6 +35,12 @@ class IncludeResolver:
     def seen_paths(self) -> frozenset[Path]:
         return frozenset(self._seen)
 
+    def add_include_dirs(self, dirs: list[Path]) -> None:
+        for d in dirs:
+            path = Path(d)
+            if path not in self.include_dirs:
+                self.include_dirs.append(path)
+
     def _resolve_absolute(self, given: Path, filename: str) -> Path:
         if given.is_file():
             return given.resolve()
