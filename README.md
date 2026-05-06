@@ -58,6 +58,25 @@ make examples                     # macOS / Apple Silicon only
 ./examples/include-stdlib         # 8 3    (uses 2dup from bundled stdlib core.fs)
 ```
 
+## Benchmarks
+
+Two deterministic-output workloads for measuring future optimisation
+work (tree-shaking, primitive inlining, peephole rules,
+colon-definition inlining):
+
+```bash
+make bench                        # builds + times both
+./examples/bench-fib              # 9227465  — fib(35), naive recursive
+./examples/bench-pi               # 31416020 — Leibniz pi, 10^6 terms, scale 10^7
+```
+
+`bench-fib.fs` exercises function-call overhead (~30M `bl`/`ret`
+pairs). `bench-pi.fs` exercises loop-body density (one division, one
+multiplication, sign flip via `1 and if negate then`, two memory ops
+on an accumulator, no recursion). The deterministic values are locked
+in by `tests/forth/test_benchmarks.fs` at smaller inputs that run
+under a second through pytest.
+
 ## CLI
 
 ```bash

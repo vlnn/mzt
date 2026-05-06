@@ -1,7 +1,7 @@
 FS_EXAMPLES := $(patsubst %.fs,%,$(wildcard examples/*.fs))
 FORTH_TESTS := $(wildcard tests/forth/test_*.fs)
 
-.PHONY: test forth-test examples clean
+.PHONY: test forth-test examples bench clean
 
 test:
 	uv run pytest
@@ -19,6 +19,16 @@ examples/hello: examples/hello.s
 
 examples/%: examples/%.fs
 	uv run mzt build $< -o $@
+
+# Build and time the benchmark binaries. Expected outputs are part of
+# the source comments; the deterministic values are also locked in by
+# tests/forth/test_benchmarks.fs (smaller inputs, run via pytest).
+bench: examples/bench-fib examples/bench-pi
+	@echo "=== bench-fib (expect: 9227465) ==="
+	@time ./examples/bench-fib
+	@echo
+	@echo "=== bench-pi  (expect: 31416020) ==="
+	@time ./examples/bench-pi
 
 clean:
 	rm -rf .pytest_cache build dist *.egg-info
