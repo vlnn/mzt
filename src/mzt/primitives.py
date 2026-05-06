@@ -253,6 +253,12 @@ _EXECUTE = (
 )
 
 
+_HALT = (
+    "    ldr     x0, [x19], #8\n"
+    "    bl      _exit\n"
+)
+
+
 _PRIMITIVES: dict[str, Primitive] = {
     p.name: p for p in [
         Primitive("zero",   "_zero",   "    str     xzr, [x19, #-8]!\n", inline=True),
@@ -295,6 +301,7 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive("i",       "_loop_i",         _LOOP_I),
         Primitive("j",       "_loop_j",         _LOOP_J),
         Primitive("execute", "_execute",        _EXECUTE),
+        Primitive("halt",    "_halt",           _HALT),
     ]
 }
 

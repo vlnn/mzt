@@ -9,19 +9,20 @@ IR, and peephole passes are reusable, the back end is rewritten for AArch64.
 
 ## Status
 
-**Post-MVP step 7 — `include`.** Top-level `include <filename>` reads
-another `.fs` file and merges its top-level definitions into the
-current program. The resolver searches relative to the including
-file first, then any `--include-dir` arguments, then the bundled
-`src/mzt/stdlib/` directory. Files included twice (or via include
-cycles) are deduplicated — only processed once. Tokens carry the
-included file's source name through every downstream error.
+**Post-MVP step 8 — vendored stdlib + Forth-side test harness.** Zt's
+portable `core.fs` subset is vendored at `src/mzt/stdlib/core.fs`
+(`2dup`, `2drop`, `tuck`, `-rot`, `?dup`, `/`, `mod`, `square`, `space`,
+`spaces`, `min`, `max`). New `halt ( n -- )` primitive calls libSystem
+`_exit(n)`. Forth-side test library at `tests/forth/test-lib.fs`
+provides `assert-eq`, `assert-true`, `assert-false`. The Python-side
+harness `tests/test_forth.py` walks `tests/forth/test-*.fs`, builds
+each binary, runs it, asserts exit code zero. *Adding a new test is
+writing one `.fs` file.*
 
-**Previously:** `:noname`/`execute` for first-class quotations (step
-6); `recurse` and `constant` (steps 4–5); counted loops
-`do`/`loop`/`+loop`/`leave`/`i`/`j` (step 3); `1+`/`1-` plus
-iteration-pattern regression set (step 2); return-stack words
-`>r`/`r>`/`r@` (step 1); variables and memory.
+**Previously:** `include` for source-file composition (step 7);
+`:noname`/`execute` (step 6); `recurse` and `constant` (steps 4–5);
+counted loops (step 3); `1+`/`1-` (step 2); return-stack words
+(step 1); variables and memory.
 
 `allot` is interpret-time and accepts only literal positive integer sizes —
 matches standard Forth, keeps the parser obvious, and dodges the harder
@@ -79,20 +80,22 @@ Source files must define `: main ... ;` as the entry point.
 
 ## Roadmap
 
-See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done plus
-variables/memory, return-stack words, `1+`/`1-` plus iteration
-regression set, counted loops, `recurse`, `constant`, `:noname` /
-`execute`, and `include` as the first eight post-MVP steps.
+See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done
+plus all eight post-MVP steps from `next_step`: variables/memory,
+return-stack words, `1+`/`1-` plus iteration regression set,
+counted loops, `recurse`, `constant`, `:noname`/`execute`, `include`,
+and the vendored stdlib + Forth-side test harness.
 
-Next per `next_step` step 8: vendor zt's full `core.fs` into the
-bundled stdlib (`src/mzt/stdlib/core.fs` already exists with a
-starter set), and write a Forth-side test runner using the
-`:noname`/`execute`/`include` triple.
-
-Possible test infrastructure improvement: a Unicorn-based
-whole-program runner that loads the assembled Mach-O and runs colon
-words on Linux (no Apple Silicon required), covering iteration
-behaviour without `printf`/`write` stubs by using non-IO test
-programs that leave results on the data stack. The prototype works
-for non-`WordAddr` programs; intra-section `adrp/add` relocations
-require a small linker pass to resolve.
+Beyond `next_step`:
+- Promote the Unicorn-based whole-program runner prototype to wired
+  test infra. Would unlock running iteration tests on Linux without
+  Apple Silicon. Needs a small relocation pass for `WordAddr`-using
+  programs.
+- Vendor more of zt's stdlib (`array.fs`, `logic.fs`, `bit.fs` —
+  the portable subsets).
+- Profiler (`mach_absolute_time` deltas), debug-map output,
+  primitive inlining, tree-shaking.
+- Eventually: REPL with runtime word compilation
+  (`MAP_JIT`/`pthread_jit_write_protect_np`/JIT entitlement).
+- Eventually: hand-rolled Mach-O + ad-hoc signing (drops the clang
+  dependency).

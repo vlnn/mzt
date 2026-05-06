@@ -78,8 +78,45 @@ def _emit_cell(cell: Cell, strings: _StringTable) -> str:
     raise TypeError(f"unknown IR cell {cell!r}")
 
 
+_LABEL_CHAR_REPLACEMENTS = {
+    "-": "_",
+    "?": "_q_",
+    "/": "_slash_",
+    "!": "_store_",
+    "@": "_fetch_",
+    "+": "_plus_",
+    "*": "_star_",
+    "<": "_lt_",
+    ">": "_gt_",
+    "=": "_eq_",
+    ".": "_dot_",
+    ",": "_comma_",
+    "%": "_pct_",
+    "&": "_amp_",
+    "|": "_pipe_",
+    "^": "_caret_",
+    "~": "_tilde_",
+    "#": "_hash_",
+    "$": "_dollar_",
+    ":": "_colon_",
+    ";": "_semi_",
+    "(": "_lparen_",
+    ")": "_rparen_",
+    "[": "_lbrack_",
+    "]": "_rbrack_",
+    "{": "_lbrace_",
+    "}": "_rbrace_",
+}
+
+
 def _word_label(name: str) -> str:
-    return "_word_" + name.replace("-", "_")
+    out = []
+    for ch in name:
+        if ch.isalnum() or ch == "_":
+            out.append(ch)
+        else:
+            out.append(_LABEL_CHAR_REPLACEMENTS.get(ch, "_"))
+    return "_word_" + "".join(out)
 
 
 def _emit_word_addr(word: WordAddr) -> str:
