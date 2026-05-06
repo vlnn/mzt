@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from mzt.ir import Branch, Cell, ColonDef, ColonRef, Label, Literal, PrimRef, StringLit
+from mzt.ir import Addr, Branch, Cell, ColonDef, ColonRef, Label, Literal, PrimRef, StringLit
 from mzt.primitives import primitive
 from mzt.runtime import runtime_epilogue, runtime_preamble
 
@@ -17,11 +17,11 @@ class _StringTable:
         return label, len(encoded)
 
 
-def emit_program(defs: list[ColonDef]) -> str:
+def emit_program(defs: list[ColonDef], user_memory_bytes: int = 0) -> str:
     strings = _StringTable()
     parts = [runtime_preamble()]
     parts.extend(_emit_colon_def(d, strings) for d in defs)
-    parts.append(runtime_epilogue())
+    parts.append(runtime_epilogue(user_memory_bytes))
     if strings.entries:
         parts.append(_emit_string_table(strings))
     return "".join(parts)
@@ -55,7 +55,23 @@ def _emit_cell(cell: Cell, strings: _StringTable) -> str:
         return _emit_branch(cell)
     if isinstance(cell, StringLit):
         return _emit_string_lit(cell, strings)
+    if isinstance(cell, Addr):
+        return _emit_addr(cell)
     raise TypeError(f"unknown IR cell {cell!r}")
+
+
+def _emit_addr(addr: Addr) -> str:
+    base_load = (
+        "    adrp    x0, Luser_mem@PAGE\n"
+        "    add     x0, x0, Luser_mem@PAGEOFF\n"
+    )
+    if addr.offset == 0:
+        return base_load + "    str     x0, [x19, #-8]!\n"
+    return (
+        base_load
+        + f"    add     x0, x0, #{addr.offset}\n"
+        + "    str     x0, [x19, #-8]!\n"
+    )
 
 
 def _emit_literal(lit: Literal) -> str:

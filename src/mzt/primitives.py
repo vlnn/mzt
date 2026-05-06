@@ -98,6 +98,34 @@ _ABS = (
 )
 
 
+_FETCH = (
+    "    ldr     x0, [x19]\n"
+    "    ldr     x0, [x0]\n"
+    "    str     x0, [x19]\n"
+)
+
+
+_STORE = (
+    "    ldr     x0, [x19], #8\n"
+    "    ldr     x1, [x19], #8\n"
+    "    str     x1, [x0]\n"
+)
+
+
+_CFETCH = (
+    "    ldr     x0, [x19]\n"
+    "    ldrb    w0, [x0]\n"
+    "    str     x0, [x19]\n"
+)
+
+
+_CSTORE = (
+    "    ldr     x0, [x19], #8\n"
+    "    ldr     x1, [x19], #8\n"
+    "    strb    w1, [x0]\n"
+)
+
+
 _DOT = (
     "    stp     x29, x30, [sp, #-16]!\n"
     "    mov     x29, sp\n"
@@ -168,6 +196,10 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive(".",      "_dot",    _DOT),
         Primitive("emit",   "_emit",   _EMIT),
         Primitive("cr",     "_cr",     _CR),
+        Primitive("@",      "_fetch",  _FETCH),
+        Primitive("!",      "_store",  _STORE),
+        Primitive("c@",     "_cfetch", _CFETCH),
+        Primitive("c!",     "_cstore", _CSTORE),
     ]
 }
 

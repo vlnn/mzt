@@ -32,7 +32,12 @@ class StringLit:
     content: str
 
 
-Cell = Literal | PrimRef | ColonRef | Label | Branch | StringLit
+@dataclass(frozen=True)
+class Addr:
+    offset: int
+
+
+Cell = Literal | PrimRef | ColonRef | Label | Branch | StringLit | Addr
 
 
 @dataclass(frozen=True)

@@ -11,6 +11,7 @@ M2_NAMES = [
     "negate", "abs",
     ".", "emit", "cr",
     "zero",
+    "@", "!", "c@", "c!",
 ]
 
 
@@ -23,7 +24,7 @@ def test_known_primitives(name):
 @pytest.mark.parametrize(
     "name",
     ["if", "then", "else", "begin", "until", "do", "loop",
-     "@", "!", "variable", "made-up-word", ""],
+     "variable", "made-up-word", ""],
 )
 def test_unknown_primitives(name):
     assert not is_primitive(name), \
@@ -58,3 +59,43 @@ def test_zero_is_the_only_inline_primitive_at_m5():
     inline_names = {p.name for p in all_primitives() if p.inline}
     assert inline_names == {"zero"}, \
         f"only 'zero' should be inline at M5, got {inline_names}"
+
+
+_LOCKED_LABELS = {
+    "zero":   "_zero",
+    "dup":    "_dup",
+    "drop":   "_drop",
+    "swap":   "_swap",
+    "over":   "_over",
+    "nip":    "_nip",
+    "rot":    "_rot",
+    "+":      "_plus",
+    "-":      "_minus",
+    "*":      "_star",
+    "/mod":   "_divmod",
+    "=":      "_eq",
+    "<":      "_lt",
+    ">":      "_gt",
+    "0=":     "_zeq",
+    "and":    "_and",
+    "or":     "_or",
+    "xor":    "_xor",
+    "invert": "_invert",
+    "negate": "_negate",
+    "abs":    "_abs",
+    ".":      "_dot",
+    "emit":   "_emit",
+    "cr":     "_cr",
+    "@":      "_fetch",
+    "!":      "_store",
+    "c@":     "_cfetch",
+    "c!":     "_cstore",
+}
+
+
+@pytest.mark.parametrize("name,expected_label", list(_LOCKED_LABELS.items()))
+def test_primitive_labels_are_locked(name, expected_label):
+    assert primitive(name).label == expected_label, \
+        f"{name!r} primitive label is part of the public contract; " \
+        f"expected {expected_label!r}, got {primitive(name).label!r}. " \
+        "Renaming a label silently breaks every assembled binary that calls it."

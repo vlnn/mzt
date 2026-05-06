@@ -175,3 +175,34 @@ def test_nonzero_literals_still_use_ldr():
     asm = compile_to_asm(": main 1 . ;")
     assert "ldr     x0, =1" in asm, \
         "non-zero literals are not affected by the zero-push rule"
+
+
+def test_compile_to_asm_handles_variable_definition():
+    asm = compile_to_asm("variable counter : main counter @ . ;")
+    assert "_word_counter:" in asm, \
+        "variable should produce a colon-style word that pushes its address"
+    assert "Luser_mem" in asm, \
+        "asm should reference the user-memory base for the variable's address"
+    assert ".zerofill __DATA,__bss,Luser_mem" in asm, \
+        "runtime should reserve user-memory bss space"
+
+
+def test_compile_to_asm_handles_create_with_allot():
+    asm = compile_to_asm("create buf 32 allot : main buf . ;")
+    assert ".zerofill __DATA,__bss,Luser_mem,32,3" in asm, \
+        "32 allot should produce a 32-byte user-memory block"
+
+
+def test_compile_to_asm_user_memory_bytes_grows_with_variables():
+    asm = compile_to_asm("variable a variable b variable c : main a . ;")
+    assert ".zerofill __DATA,__bss,Luser_mem,32,3" in asm, \
+        "three 8-byte variables = 24 bytes, rounded up to 32 (16-byte boundary)"
+
+
+def test_variable_address_is_pushed_via_adrp_add():
+    asm = compile_to_asm("variable counter : main counter ;")
+    counter_section = asm[asm.index("_word_counter:"):asm.index("_word_main:")]
+    assert "adrp    x0, Luser_mem@PAGE" in counter_section, \
+        "counter's body should load user-mem base via adrp"
+    assert "str     x0, [x19, #-8]!" in counter_section, \
+        "counter's body should push the address onto the stack"

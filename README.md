@@ -9,31 +9,30 @@ IR, and peephole passes are reusable, the back end is rewritten for AArch64.
 
 ## Status
 
-**M5 — peephole framework + two seed rules.** Rules-as-data, sorted by
-pattern length so longer patterns always win, applied left-to-right and
-iterated to fixpoint so cascading rewrites converge in one optimize call.
-Two starter rules:
+**Post-MVP step 1 — variables and memory.** `variable`, `create`, `allot`,
+`@`, `!`, `c@`, `c!`. Compile-time bump pointer claims fresh offsets into
+a single `Luser_mem` `.zerofill` block sized per-program; addresses
+resolve via `adrp/add` to the block's base plus the offset. `variable foo`
+reserves an 8-byte cell; `create buf 100 allot` reserves 100 raw bytes;
+`!` and `@` move 64-bit cells, `c!` and `c@` move single bytes.
 
-- `Literal(0)` → `PrimRef("zero")`, inlined as `str xzr, [x19, #-8]!`
-  (saves a 4-byte `movz` per occurrence; the `_zero:` function is omitted
-  from the runtime since it's never called via bl).
-- `swap drop` → `nip` (one `bl _nip` replaces two bl calls).
+`allot` is interpret-time and accepts only literal positive integer sizes —
+matches standard Forth, keeps the parser obvious, and dodges the harder
+runtime-allot question for now.
 
-New rules are appended to a list in `peephole.py`; no other code changes
-required.
-
-Still in: 24 primitives, control flow, output (`emit` `cr` `."`), 8 KB
-data stack, all of M1–M4.
+Still in: M0–M5 (skeleton, primitives, control flow, output, peephole).
 
 ## Quickstart
 
 ```bash
 uv sync
-make test                         # 348 passing on Linux / 360 on Apple Silicon
-make examples
+make test
+make examples                     # macOS / Apple Silicon only
+./examples/counter                # 3
+./examples/buffer                 # Hi!
+./examples/array-sum              # 15
 ./examples/hello-text             # Hello, world!
 ./examples/fact                   # 120
-./examples/peephole               # 7  (exercises both rules)
 ```
 
 ## CLI
@@ -46,19 +45,22 @@ Source files must define `: main ... ;` as the entry point.
 
 ## Test layers
 
-- **Pure pytest** for tokenizer, compiler (including control-flow IR shape),
-  primitive registry, emitter, CLI.
-- **clang + Unicorn** for primitive bodies (each of the 21 primitives, ~70
-  cases) and control-flow semantics (`cbz`/`b` actually jump where the
-  emitter says they will). `clang -arch arm64 -c` produces a Mach-O object,
-  a small parser pulls the `__TEXT,__text` bytes out, and Unicorn runs
-  them against a synthetic data stack. `@lru_cache` amortises the
-  per-primitive subprocess cost.
+- **Pure pytest** for tokenizer, compiler (including control-flow IR shape
+  and memory definitions), primitive registry, emitter, CLI.
+- **clang + Unicorn** for primitive bodies and control-flow semantics.
+  `clang -arch arm64 -c` produces a Mach-O object, a small parser pulls
+  the `__TEXT,__text` bytes out, and Unicorn runs them against a
+  synthetic data stack. `@lru_cache` amortises the per-primitive
+  subprocess cost.
 - **End-to-end** via `clang` and the produced Mach-O binary; gated to
   `sys.platform == "darwin"`.
 
 ## Roadmap
 
-See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done.
-Next up: M6 — port the portable subset of zt's examples to lock the
-language surface in.
+See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done plus
+variables and memory as the first post-MVP step.
+
+Next post-MVP steps in priority order: `do`/`loop`/`+loop` (return-stack-
+pinned counter), debug map output, primitive inlining for non-`zero`
+cases, tree-shaking of unreachable words, profiler, JIT/REPL with
+runtime word compilation.

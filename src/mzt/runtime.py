@@ -2,6 +2,7 @@ from mzt.primitives import Primitive, all_primitives
 
 
 DSTACK_BYTES = 8192
+USER_MEMORY_MIN_BYTES = 16
 
 
 def runtime_preamble() -> str:
@@ -12,8 +13,8 @@ def runtime_preamble() -> str:
     )
 
 
-def runtime_epilogue() -> str:
-    return _rodata() + _bss()
+def runtime_epilogue(user_memory_bytes: int = 0) -> str:
+    return _rodata() + _bss(user_memory_bytes)
 
 
 def _entry_point() -> str:
@@ -63,5 +64,13 @@ def _rodata() -> str:
     )
 
 
-def _bss() -> str:
-    return f"\n.zerofill __DATA,__bss,Ldstack_base,{DSTACK_BYTES},3\n"
+def _bss(user_memory_bytes: int) -> str:
+    user_size = max(USER_MEMORY_MIN_BYTES, _round_up_16(user_memory_bytes))
+    return (
+        f"\n.zerofill __DATA,__bss,Ldstack_base,{DSTACK_BYTES},3\n"
+        f".zerofill __DATA,__bss,Luser_mem,{user_size},3\n"
+    )
+
+
+def _round_up_16(n: int) -> int:
+    return (n + 15) & ~15

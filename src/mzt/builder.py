@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from mzt.compiler import CompileError, compile_source
+from mzt.compiler import CompileError, compile_source, program_user_memory_size
 from mzt.emitter import emit_program
 from mzt.ir import ColonDef
 from mzt.peephole import optimize
@@ -25,7 +25,8 @@ def build_source(source_path: Path, out_path: Path) -> Path:
 def compile_to_asm(source: str) -> str:
     defs = compile_source(source)
     _require_entry(defs)
-    return emit_program(optimize(defs))
+    user_memory_bytes = program_user_memory_size(source)
+    return emit_program(optimize(defs), user_memory_bytes=user_memory_bytes)
 
 
 def _require_entry(defs: list[ColonDef]) -> None:

@@ -240,3 +240,46 @@ def test_non_inline_primitives_still_emit_bl():
     asm = _emit_main(PrimRef("dup"))
     assert "bl      _dup" in asm, \
         "non-inline primitives must still be invoked via bl"
+
+
+def test_addr_loads_user_mem_base_and_pushes():
+    from mzt.ir import Addr
+    asm = _emit_main(Addr(0))
+    assert "adrp    x0, Luser_mem@PAGE" in asm, \
+        "Addr should load user-memory base via adrp/PAGE"
+    assert "add     x0, x0, Luser_mem@PAGEOFF" in asm, \
+        "Addr should complete the address with PAGEOFF"
+    assert "str     x0, [x19, #-8]!" in asm, \
+        "Addr should push the computed address onto the data stack"
+
+
+def test_addr_with_zero_offset_omits_add_immediate():
+    from mzt.ir import Addr
+    asm = _emit_main(Addr(0))
+    assert "add     x0, x0, #0" not in asm, \
+        "Addr(0) should not emit a redundant 'add x0, x0, #0' instruction"
+
+
+def test_addr_with_nonzero_offset_includes_add_immediate():
+    from mzt.ir import Addr
+    asm = _emit_main(Addr(32))
+    assert "add     x0, x0, #32" in asm, \
+        "Addr(32) should emit 'add x0, x0, #32' to advance from the base"
+
+
+def test_runtime_emits_user_mem_zerofill():
+    asm = emit_program([ColonDef("main", ())], user_memory_bytes=64)
+    assert ".zerofill __DATA,__bss,Luser_mem,64,3" in asm, \
+        "runtime epilogue should declare a 64-byte Luser_mem .zerofill block"
+
+
+def test_runtime_user_mem_minimum_size():
+    asm = emit_program([ColonDef("main", ())], user_memory_bytes=0)
+    assert ".zerofill __DATA,__bss,Luser_mem,16,3" in asm, \
+        "Luser_mem block should default to 16 bytes when no variables are declared"
+
+
+def test_runtime_user_mem_rounded_up_to_16():
+    asm = emit_program([ColonDef("main", ())], user_memory_bytes=33)
+    assert ".zerofill __DATA,__bss,Luser_mem,48,3" in asm, \
+        "Luser_mem block should be rounded up to a 16-byte boundary"
