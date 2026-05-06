@@ -119,7 +119,7 @@ Source files must define `: main ... ;` as the entry point.
 ## JIT backend (work in progress)
 
 A REPL-oriented JIT backend lives at `src/mzt/jit/` alongside the
-clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–2.
+clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–4.
 
 **Step 1 — JIT memory region.** `JitRegion` wraps `mmap(MAP_JIT)` plus
 `pthread_jit_write_protect_np`, exposes a `with region.writable():`
@@ -131,11 +131,11 @@ Apple Silicon).
 
 **Step 2 — minimal ARM64 byte assembler.** `src/mzt/jit/assembler.py`
 exposes one pure encoder per instruction form the IR emits — `ret`,
-`bl`, `b`, `b.cond`, `cbz`/`cbnz`, `movz`/`movk`/`movn`, `add`/`sub`
-(immediate and register), `adrp`, `str`/`ldr` in three addressing
-modes, `stp`/`ldp` pre-indexed and offset, `cmp`, `mov`, plus a
-`movz_imm64` helper that lowers an arbitrary 64-bit constant to a
-`movz`+`movk` tower with zero chunks skipped. Encodings are
+`bl`, `blr`, `b`, `b.cond`, `cbz`/`cbnz`, `movz`/`movk`/`movn`,
+`add`/`sub` (immediate and register), `adrp`, `str`/`ldr` in three
+addressing modes, `stp`/`ldp` pre-indexed and offset, `cmp`, `mov`,
+plus a `movz_imm64` helper that lowers an arbitrary 64-bit constant
+to a `movz`+`movk` tower with zero chunks skipped. Encodings are
 parametrised against `tests/_jit_reference_data.py` (the source of
 truth) and a generated audit file `tests/jit_reference_encodings.txt`.
 
@@ -146,10 +146,64 @@ against the assembler we ship with". Requires clang.
 `scripts/regen_jit_reference.py` regenerates the audit file when
 encoders change.
 
-### Smoke test on Apple Silicon
+**Step 3 — host library + primitive table.** `src/mzt/jit/host_lib.py`
+emits a "primitives-only" assembly file (every non-inline primitive
+plus `_print_str`, all `.globl`-exported, plus the `__cstring` and
+`__bss` sections those bodies reference) and shells out to
+`clang -dynamiclib` to build `build/jit/libmzt_host.dylib`. The dylib
+contains the same primitive bytes the AOT path emits — same source,
+same body strings — so behaviour is locked together.
 
-The host Python binary needs the JIT entitlement. Once per dev
-machine:
+`src/mzt/jit/primitive_table.py::PrimitiveTable` is a tiny frozen
+name → address map. `load_primitives_from_dylib(path)` opens the
+dylib via `ctypes.CDLL`, runs `dlsym` once per primitive label at
+build time, and caches the result. From the JIT emitter's point of
+view, `table.address("dup")` is a hash lookup that returns an
+`int`-shaped absolute address.
+
+**Step 4 — IR-to-bytes emitter.** `src/mzt/jit/emitter.py` takes a
+list of IR cells (`Literal`, `PrimRef`, `ColonRef`, `Label`, `Branch`)
+and emits a complete callable function: AAPCS64 prologue, body, then
+epilogue with `ret`. Each cell type has a small dedicated handler.
+`Branch`/`Label` use a two-pass scheme — pass 1 records label
+positions and emits placeholder words for branches, pass 2 patches
+each placeholder with the resolved relative offset.
+
+Primitive calls go through `movz x16, #addr; blr x16` rather than
+`bl <offset>`, because the host dylib and the JIT region can be more
+than ±128MB apart on macOS — beyond `bl`'s reach. `movz_imm64` skips
+zero chunks so the typical primitive call is 3-4 instructions
+instead of 5. `ColonRef` between two JIT'd bodies stays as `bl`
+since both live in the same `JitRegion` (max 16KB at MVP).
+
+Inline primitives — currently just `zero` — are inlined byte-for-byte
+via the `_INLINE_PRIMITIVE_WORDS` table. `StringLit`, `Addr`, and
+`WordAddr` are deferred (they need page-aligned `adrp` against
+either the host dylib's `__cstring` / `__bss` or a JIT-controlled
+data area).
+
+`tests/test_jit_emitter.py` has 32 byte-level assertions (one per
+cell type, branches forward and back, if/else/then composition).
+`tests/test_jit_emitter_unicorn.py` has 18 semantic tests that
+actually execute the emitted bytes through Unicorn, validating
+that primitive calls reach (including a 200TB-distant address that
+`bl` could never have hit), branches resolve correctly, and
+`ColonRef` between two JIT'd bodies works.
+
+### Smoke tests
+
+```bash
+uv run python examples/jit_emitter_smoke.py     # JIT-compiles 2 3 + via Unicorn
+uv run pytest scripts/verify_jit_encodings.py   # all 69 encodings match clang
+```
+
+The emitter smoke runs anywhere with unicorn installed — no Apple
+Silicon, no clang, no JIT entitlement.
+
+### On Apple Silicon
+
+The host Python binary needs the JIT entitlement for Step 1's
+`mmap(MAP_JIT)`. Once per dev machine:
 
 ```bash
 cat > /tmp/jit.plist <<'PLIST'
@@ -167,12 +221,17 @@ codesign --entitlements /tmp/jit.plist --force -s - "$(uv run python -c 'import 
 Then:
 
 ```bash
-uv run python examples/jit_smoke.py     # JIT'd function returned 42
-uv run python scripts/verify_jit_encodings.py
+uv run python examples/jit_smoke.py             # JIT'd function returned 42
+uv run python examples/jit_host_lib_smoke.py    # builds dylib, resolves all primitives
+uv run python examples/jit_emitter_smoke.py     # runs the IR emitter pipeline
 ```
 
+`jit_host_lib_smoke.py` and `jit_emitter_smoke.py` do not need the
+JIT entitlement — they only do dlsym and Unicorn emulation. Only
+`jit_smoke.py` exercises real `mmap(MAP_JIT)`.
+
 Without the entitlement, every `mmap(MAP_JIT)` call returns
-`MAP_FAILED` and the smoke test prints an allocation error.
+`MAP_FAILED` and `jit_smoke.py` prints an allocation error.
 
 ## Roadmap
 
@@ -195,4 +254,4 @@ Beyond `next_step`:
   dependency).
 - In progress: REPL with runtime word compilation
   (`MAP_JIT`/`pthread_jit_write_protect_np`/JIT entitlement). Steps
-  1–2 of `JIT_Plan` shipped; see "JIT backend" above.
+  1–4 of `JIT_Plan` shipped; see "JIT backend" above.

@@ -5,6 +5,7 @@ from mzt.jit.assembler import (
     encode_b,
     encode_b_cond,
     encode_bl,
+    encode_blr,
     encode_br,
     encode_cbnz,
     encode_cbz,
@@ -40,6 +41,9 @@ REFERENCE_ENCODINGS: list[tuple[str, int]] = [
     ("ret x29",                          encode_ret(29)),
     ("br x9",                            encode_br(9)),
     ("br x19",                           encode_br(19)),
+
+    ("blr x9",                           encode_blr(9)),
+    ("blr x16",                          encode_blr(16)),
 
     ("bl #0",                            encode_bl(0)),
     ("bl #4",                            encode_bl(4)),

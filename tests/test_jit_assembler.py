@@ -21,6 +21,7 @@ from mzt.jit.assembler import (
     encode_b,
     encode_b_cond,
     encode_bl,
+    encode_blr,
     encode_br,
     encode_cbnz,
     encode_cbz,
@@ -95,6 +96,16 @@ def test_ret_with_other_register_changes_only_rn_field():
 def test_br_x9_is_well_known_encoding():
     assert encode_br(9) == 0xD61F0120, \
         "br x9 is a well-known encoding (used by `execute` primitive)"
+
+
+def test_blr_x9_is_well_known_encoding():
+    assert encode_blr(9) == 0xD63F0120, \
+        "blr x9 is br + bit 21 set; used by JIT'd code to call far primitive addresses"
+
+
+def test_br_and_blr_differ_only_in_bit_21():
+    assert encode_br(9) ^ encode_blr(9) == 0x0020_0000, \
+        "BR and BLR have the same shape; only the link bit (21) differs"
 
 
 @pytest.mark.parametrize("offset,expected", [

@@ -68,6 +68,11 @@ def encode_br(reg: int) -> int:
     return 0xD61F0000 | (reg << 5)
 
 
+def encode_blr(reg: int) -> int:
+    _check_reg("blr", reg)
+    return 0xD63F0000 | (reg << 5)
+
+
 def encode_bl(offset_bytes: int) -> int:
     _check_aligned("bl", offset_bytes)
     imm26 = offset_bytes >> 2
