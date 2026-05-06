@@ -2,6 +2,7 @@ from mzt.primitives import Primitive, all_primitives
 
 
 DSTACK_BYTES = 8192
+RSTACK_BYTES = 4096
 USER_MEMORY_MIN_BYTES = 16
 
 
@@ -29,6 +30,9 @@ _main:
     adrp    x19, Ldstack_base@PAGE
     add     x19, x19, Ldstack_base@PAGEOFF
     add     x19, x19, #{DSTACK_BYTES}
+    adrp    x20, Lrstack_base@PAGE
+    add     x20, x20, Lrstack_base@PAGEOFF
+    add     x20, x20, #{RSTACK_BYTES}
     bl      _word_main
     mov     w0, #0
     ldp     x29, x30, [sp], #16
@@ -68,6 +72,7 @@ def _bss(user_memory_bytes: int) -> str:
     user_size = max(USER_MEMORY_MIN_BYTES, _round_up_16(user_memory_bytes))
     return (
         f"\n.zerofill __DATA,__bss,Ldstack_base,{DSTACK_BYTES},3\n"
+        f".zerofill __DATA,__bss,Lrstack_base,{RSTACK_BYTES},3\n"
         f".zerofill __DATA,__bss,Luser_mem,{user_size},3\n"
     )
 

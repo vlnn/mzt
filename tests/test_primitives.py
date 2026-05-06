@@ -12,6 +12,7 @@ M2_NAMES = [
     ".", "emit", "cr",
     "zero",
     "@", "!", "c@", "c!",
+    ">r", "r>", "r@",
 ]
 
 
@@ -90,6 +91,9 @@ _LOCKED_LABELS = {
     "!":      "_store",
     "c@":     "_cfetch",
     "c!":     "_cstore",
+    ">r":     "_to_r",
+    "r>":     "_r_from",
+    "r@":     "_r_fetch",
 }
 
 

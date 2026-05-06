@@ -32,6 +32,8 @@ apple_silicon_only = pytest.mark.skipif(
         ("counter.fs",    "3\n"),
         ("buffer.fs",     "Hi!\n"),
         ("array-sum.fs",  "15\n"),
+        ("rstack.fs",     "50\n"),
+        ("rstack-stash.fs", "56\n"),
     ],
 )
 def test_compiles_and_runs(tmp_build_dir, source_name, expected_stdout):

@@ -170,6 +170,24 @@ _CR = (
 )
 
 
+_TO_R = (
+    "    ldr     x0, [x19], #8\n"
+    "    str     x0, [x20, #-8]!\n"
+)
+
+
+_R_FROM = (
+    "    ldr     x0, [x20], #8\n"
+    "    str     x0, [x19, #-8]!\n"
+)
+
+
+_R_FETCH = (
+    "    ldr     x0, [x20]\n"
+    "    str     x0, [x19, #-8]!\n"
+)
+
+
 _PRIMITIVES: dict[str, Primitive] = {
     p.name: p for p in [
         Primitive("zero",   "_zero",   "    str     xzr, [x19, #-8]!\n", inline=True),
@@ -200,6 +218,9 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive("!",      "_store",  _STORE),
         Primitive("c@",     "_cfetch", _CFETCH),
         Primitive("c!",     "_cstore", _CSTORE),
+        Primitive(">r",     "_to_r",    _TO_R),
+        Primitive("r>",     "_r_from",  _R_FROM),
+        Primitive("r@",     "_r_fetch", _R_FETCH),
     ]
 }
 

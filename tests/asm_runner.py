@@ -52,12 +52,14 @@ HARNESS_AVAILABLE, HARNESS_ERROR = _detect_harness()
 
 if HARNESS_AVAILABLE:
     import unicorn
-    from unicorn.arm64_const import UC_ARM64_REG_X19
+    from unicorn.arm64_const import UC_ARM64_REG_X19, UC_ARM64_REG_X20
 
 
 CODE_BASE = 0x1000_0000
 STACK_BASE = 0x2000_0000
 STACK_SIZE = 4096
+RSTACK_BASE = 0x3000_0000
+RSTACK_SIZE = 4096
 
 
 class HarnessUnavailable(RuntimeError):
@@ -164,3 +166,50 @@ def _read_stack(uc, x19: int) -> list[int]:
 def _to_bytes(value: int) -> bytes:
     masked = value & 0xFFFFFFFFFFFFFFFF
     return masked.to_bytes(8, "little", signed=False)
+
+
+def run_with_stacks(
+    asm_body: str,
+    dstack_in: list[int],
+    rstack_in: list[int],
+) -> tuple[list[int], list[int]]:
+    _require_harness()
+    code = assemble(asm_body + "\n")
+    uc = _make_emulator_with_rstack(code)
+    initial_x19 = _load_initial_stack(uc, dstack_in)
+    initial_x20 = _load_initial_rstack(uc, rstack_in)
+    uc.reg_write(UC_ARM64_REG_X19, initial_x19)
+    uc.reg_write(UC_ARM64_REG_X20, initial_x20)
+    uc.emu_start(CODE_BASE, CODE_BASE + len(code))
+    final_x19 = uc.reg_read(UC_ARM64_REG_X19)
+    final_x20 = uc.reg_read(UC_ARM64_REG_X20)
+    return _read_stack(uc, final_x19), _read_rstack(uc, final_x20)
+
+
+def _make_emulator_with_rstack(code: bytes):
+    uc = unicorn.Uc(unicorn.UC_ARCH_ARM64, unicorn.UC_MODE_LITTLE_ENDIAN)
+    uc.mem_map(CODE_BASE, 4096)
+    uc.mem_map(STACK_BASE, STACK_SIZE)
+    uc.mem_map(RSTACK_BASE, RSTACK_SIZE)
+    uc.mem_write(CODE_BASE, code)
+    return uc
+
+
+def _load_initial_rstack(uc, rstack_in: list[int]) -> int:
+    rstack_top = RSTACK_BASE + RSTACK_SIZE
+    initial_x20 = rstack_top - 8 * len(rstack_in)
+    for offset, value in enumerate(reversed(rstack_in)):
+        uc.mem_write(initial_x20 + 8 * offset, _to_bytes(value))
+    return initial_x20
+
+
+def _read_rstack(uc, x20: int) -> list[int]:
+    rstack_top = RSTACK_BASE + RSTACK_SIZE
+    if x20 > rstack_top:
+        raise StackUnderflow(
+            f"primitive popped past the bottom of the return stack (x20=0x{x20:x})"
+        )
+    cells: list[int] = []
+    for addr in range(rstack_top - 8, x20 - 1, -8):
+        cells.append(int.from_bytes(uc.mem_read(addr, 8), "little", signed=True))
+    return cells

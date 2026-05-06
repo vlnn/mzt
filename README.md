@@ -9,12 +9,18 @@ IR, and peephole passes are reusable, the back end is rewritten for AArch64.
 
 ## Status
 
-**Post-MVP step 1 — variables and memory.** `variable`, `create`, `allot`,
-`@`, `!`, `c@`, `c!`. Compile-time bump pointer claims fresh offsets into
-a single `Luser_mem` `.zerofill` block sized per-program; addresses
-resolve via `adrp/add` to the block's base plus the offset. `variable foo`
-reserves an 8-byte cell; `create buf 100 allot` reserves 100 raw bytes;
-`!` and `@` move 64-bit cells, `c!` and `c@` move single bytes.
+**Post-MVP step 2 — return-stack words.** `>r`, `r>`, `r@` move cells
+between the data stack (`x19`) and a second pinned, callee-saved stack
+in `x20`. The runtime reserves `Lrstack_base` (4 KB) in `.bss` and
+`_main` initialises `x20` to its top. The compiler tracks return-stack
+depth per colon body: `>r` increments, `r>`/`r@` underflow if depth is
+zero, and `;` rejects unbalanced bodies with a message naming the
+definition. `r_depth` resets between definitions.
+
+**Previously:** variables and memory (`variable`, `create`, `allot`,
+`@`, `!`, `c@`, `c!`) compile against a single `Luser_mem` `.zerofill`
+block sized per-program; addresses resolve via `adrp/add` to the
+block's base plus a bump-pointer offset.
 
 `allot` is interpret-time and accepts only literal positive integer sizes —
 matches standard Forth, keeps the parser obvious, and dodges the harder
@@ -33,6 +39,8 @@ make examples                     # macOS / Apple Silicon only
 ./examples/array-sum              # 15
 ./examples/hello-text             # Hello, world!
 ./examples/fact                   # 120
+./examples/rstack                 # 50
+./examples/rstack-stash           # 56
 ```
 
 ## CLI
@@ -58,9 +66,9 @@ Source files must define `: main ... ;` as the entry point.
 ## Roadmap
 
 See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done plus
-variables and memory as the first post-MVP step.
+variables/memory and return-stack words as the first two post-MVP steps.
 
-Next post-MVP steps in priority order: `do`/`loop`/`+loop` (return-stack-
-pinned counter), debug map output, primitive inlining for non-`zero`
-cases, tree-shaking of unreachable words, profiler, JIT/REPL with
-runtime word compilation.
+Next per `next_step`: `1+`/`1-` plus iteration regression examples
+(step 2), then counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j`
+(step 3). Beyond that: `recurse`, `constant`, `:noname`/`execute`,
+`include`, vendor `core.fs` and write Forth-side tests.

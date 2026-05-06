@@ -64,6 +64,9 @@ def test_literal_pushes_via_pre_decrement():
         (".",      "bl      _dot"),
         ("emit",   "bl      _emit"),
         ("cr",     "bl      _cr"),
+        (">r",     "bl      _to_r"),
+        ("r>",     "bl      _r_from"),
+        ("r@",     "bl      _r_fetch"),
     ],
 )
 def test_primitive_compiles_to_bl(name, expected_call):

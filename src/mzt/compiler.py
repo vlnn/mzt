@@ -30,6 +30,7 @@ class _BodyState:
     cells: list[Cell] = field(default_factory=list)
     cf_stack: ControlStack = field(default_factory=ControlStack)
     labels: _LabelGen = field(default_factory=_LabelGen)
+    r_depth: int = 0
 
 
 @dataclass
@@ -159,18 +160,48 @@ def _parse_body(cursor: "_PeekableTokens", name_token: Token, state: _BodyState)
                     f"line {token.line}: ';' inside ':{name_token.value}' "
                     "with unclosed control flow"
                 )
+            if state.r_depth != 0:
+                raise CompileError(
+                    f"line {token.line}: ':{name_token.value}' ends with "
+                    f"unbalanced return stack (depth={state.r_depth}); "
+                    "every >r must be matched by an r> before ';'"
+                )
             return tuple(state.cells)
-        _consume_token(token, state)
+        _consume_token(token, state, name_token)
     raise CompileError(
         f"line {name_token.line}: ':{name_token.value}' is missing closing ';'"
     )
 
 
-def _consume_token(token: Token, state: _BodyState) -> None:
+def _consume_token(token: Token, state: _BodyState, name_token: Token) -> None:
     if token.kind == TokenKind.WORD and token.value in _CONTROL_HANDLERS:
         _CONTROL_HANDLERS[token.value](state, token)
         return
-    state.cells.append(_to_cell(token))
+    cell = _to_cell(token)
+    state.cells.append(cell)
+    _track_return_stack(cell, token, state, name_token)
+
+
+def _track_return_stack(cell: Cell, token: Token, state: _BodyState, name_token: Token) -> None:
+    if not isinstance(cell, PrimRef):
+        return
+    if cell.name == ">r":
+        state.r_depth += 1
+        return
+    if cell.name == "r>":
+        if state.r_depth <= 0:
+            raise CompileError(
+                f"line {token.line}: 'r>' in ':{name_token.value}' "
+                f"with empty return stack — no matching '>r' precedes it"
+            )
+        state.r_depth -= 1
+        return
+    if cell.name == "r@":
+        if state.r_depth <= 0:
+            raise CompileError(
+                f"line {token.line}: 'r@' in ':{name_token.value}' "
+                f"with empty return stack — no matching '>r' precedes it"
+            )
 
 
 def _to_cell(token: Token) -> Cell:
