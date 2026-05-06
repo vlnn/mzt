@@ -73,6 +73,23 @@ def _make_fake_region():
     return JitRegion(libc=FakeLibc())
 
 
+def test_compile_pre_registers_address_so_recursion_resolves():
+    from mzt.ir import ColonRef
+    exec_ = _build_executor()
+    addr = exec_.compile("fact", [Literal(1), ColonRef("fact")])
+    assert exec_.word_addresses["fact"] == addr, \
+        "self-referential body must find its own name in word_addresses (recurse support)"
+
+
+def test_compile_rollback_on_emitter_error():
+    from mzt.ir import ColonRef
+    exec_ = _build_executor()
+    with pytest.raises(Exception):
+        exec_.compile("bad", [ColonRef("never-defined")])
+    assert "bad" not in exec_.word_addresses, \
+        "if the emitter rejects the body, the tentative pre-registration must be rolled back"
+
+
 def test_initial_state_points_at_stack_tops():
     exec_ = _build_executor()
     assert exec_.x19 == DSTACK_TOP_FAKE, "x19 starts at the data-stack top"

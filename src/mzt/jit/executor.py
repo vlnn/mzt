@@ -75,15 +75,19 @@ class JitExecutor:
     def compile(self, name: str, cells: Iterable[Cell]) -> int:
         cells_list = list(cells)
         body_addr = self.region.here()
-        payload = compile_body_to_bytes(
-            cells_list,
-            base_addr=body_addr,
-            primitives=self.primitives,
-            word_addresses=self.word_addresses,
-        )
-        with self.region.writable():
-            self.region.append_bytes(payload)
         self.word_addresses[name] = body_addr
+        try:
+            payload = compile_body_to_bytes(
+                cells_list,
+                base_addr=body_addr,
+                primitives=self.primitives,
+                word_addresses=self.word_addresses,
+            )
+            with self.region.writable():
+                self.region.append_bytes(payload)
+        except Exception:
+            del self.word_addresses[name]
+            raise
         return body_addr
 
     def execute(self, body_addr: int) -> None:

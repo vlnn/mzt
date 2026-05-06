@@ -119,7 +119,7 @@ Source files must define `: main ... ;` as the entry point.
 ## JIT backend (work in progress)
 
 A REPL-oriented JIT backend lives at `src/mzt/jit/` alongside the
-clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–5.
+clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–6.
 
 **Step 1 — JIT memory region.** `JitRegion` wraps `mmap(MAP_JIT)` plus
 `pthread_jit_write_protect_np`, exposes a `with region.writable():`
@@ -210,9 +210,29 @@ The executor takes its dependencies (primitives, region, trampoline
 callable, stack tops) by injection in `__init__`, so pure-logic
 tests can substitute fakes without ever touching ctypes or the JIT
 region's `mmap(MAP_JIT)` syscall. Only `JitExecutor.open()` wires
-the real ones. 15 pure-logic tests + 4 platform-gated tests (build
+the real ones. 17 pure-logic tests + 4 platform-gated tests (build
 the dylib, compile `2 3 +`, execute, assert stack == [5]; same for
-a colon-ref calling another JIT'd word; reset behaviour).
+a colon-ref calling another JIT'd word; reset behaviour;
+recursion-via-pre-registered-address).
+
+**Step 6 — JIT REPL.** `src/mzt/jit/repl_executor.py::JitReplExecutor`
+adapts `JitExecutor` to the existing `Executor = Callable[[Session,
+str], str]` protocol used by the REPL driver. Each `__call__`:
+absorbs any new interactive definitions from the session into a
+private `ProgramState` (so it can recover their IR cells from
+`info.source_text`), wraps the user's expression as a synthetic
+colon definition `: __jit_eval_N <expression> ;`, JIT-compiles
+every pending definition in dependency order, and runs the eval
+word. JIT-compiled words persist across calls, so state on x19/x20
+naturally carries forward. Errors at any stage (tokenizer, compiler,
+JIT emitter) are surfaced as the executor's return string.
+
+`mzt repl --jit` enables the JIT path from the CLI. The same `Repl`
+machinery, `run_interactive` driver, and meta-commands work
+unchanged — the executor is the only swap. JIT-compiled primitive
+output (e.g. from `.`) goes straight to fd 1, the same fd the REPL
+driver writes its prompt to, so a `5 .` prints `5` between prompts
+naturally.
 
 ### Smoke tests
 
@@ -249,6 +269,8 @@ uv run python examples/jit_smoke.py             # JIT'd function returned 42
 uv run python examples/jit_host_lib_smoke.py    # builds dylib, resolves all primitives
 uv run python examples/jit_emitter_smoke.py     # runs the IR emitter pipeline
 uv run python examples/jit_executor_smoke.py    # full end-to-end: 2 3 + via JIT
+uv run python examples/jit_repl_smoke.py        # REPL flow: feed defs, evaluate, observe
+mzt repl --jit                                  # interactive JIT REPL
 ```
 
 `jit_host_lib_smoke.py` and `jit_emitter_smoke.py` do not need the
@@ -280,4 +302,4 @@ Beyond `next_step`:
   dependency).
 - In progress: REPL with runtime word compilation
   (`MAP_JIT`/`pthread_jit_write_protect_np`/JIT entitlement). Steps
-  1–5 of `JIT_Plan` shipped; see "JIT backend" above.
+  1–6 of `JIT_Plan` shipped; see "JIT backend" above.

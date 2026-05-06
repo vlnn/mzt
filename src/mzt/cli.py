@@ -15,7 +15,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "build":
         return _run_build(args.source, args.output)
     if args.cmd == "repl":
-        return _run_repl(args.include_dirs)
+        return _run_repl(args.include_dirs, jit=args.jit)
     parser.error(f"unknown command {args.cmd!r}")
     return 2
 
@@ -35,6 +35,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="extra directory to search for include files",
     )
+    repl.add_argument(
+        "--jit",
+        action="store_true",
+        help="use the JIT executor (Apple Silicon only; needs JIT entitlement)",
+    )
     return parser
 
 
@@ -47,10 +52,21 @@ def _run_build(source: Path, output: Path) -> int:
     return 0
 
 
-def _run_repl(include_dirs: list[Path]) -> int:
-    repl = Repl(executor=ClangExecutor(), include_dirs=include_dirs)
-    run_interactive(repl, stdin=sys.stdin, stdout=sys.stdout)
+def _run_repl(include_dirs: list[Path], *, jit: bool = False) -> int:
+    executor = _make_jit_executor() if jit else ClangExecutor()
+    repl = Repl(executor=executor, include_dirs=include_dirs)
+    try:
+        run_interactive(repl, stdin=sys.stdin, stdout=sys.stdout)
+    finally:
+        close = getattr(executor, "close", None)
+        if close is not None:
+            close()
     return 0
+
+
+def _make_jit_executor():
+    from mzt.jit.repl_executor import JitReplExecutor
+    return JitReplExecutor()
 
 
 if __name__ == "__main__":
