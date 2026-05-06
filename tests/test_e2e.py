@@ -41,6 +41,8 @@ apple_silicon_only = pytest.mark.skipif(
         ("do-sum.fs",     "15\n"),
         ("do-leave.fs",   "14\n"),
         ("do-nested.fs",  "1\n2\n2\n4\n3\n6\n"),
+        ("recurse-fact.fs",  "120\n"),
+        ("constant-area.fs", "27\n"),
     ],
 )
 def test_compiles_and_runs(tmp_build_dir, source_name, expected_stdout):

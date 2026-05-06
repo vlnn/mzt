@@ -9,20 +9,16 @@ IR, and peephole passes are reusable, the back end is rewritten for AArch64.
 
 ## Status
 
-**Post-MVP step 4 — counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j`.**
-Six new primitives (`(do)`, `(loop)`, `(+loop)`, `unloop`, `i`, `j`) plus
-six new control words. `do` pushes `(limit, index)` onto the rstack;
-`loop` increments and tests; `+loop` handles signed steps with the
-`(old < limit) != (new < limit)` crossing test from ANS Forth; `leave`
-walks the control stack via `find_innermost("do")` and emits an
-unconditional branch to the loop's exit label. `i` and `j` read top
-and offset-16 of the rstack. The compiler tracks user-visible
-return-stack depth across loop boundaries: `>r` inside a loop body
-must be matched by `r>` before `loop`/`+loop`/`leave`.
+**Post-MVP steps 5+6 — `recurse` and `constant`.** A one-line immediate
+that emits a `ColonRef` to the in-progress definition, plus a top-level
+`<num> constant <name>` form that registers a one-cell colon definition.
+Recursive factorial works (`: fact dup 1 < if drop 1 else dup 1 - recurse * then ;`),
+and constants behave as expected (`100 constant max-items`).
 
-**Previously:** `1+`/`1-` plus the iteration-pattern regression set
-(step 3); return-stack words `>r`/`r>`/`r@` (step 2); variables and
-memory (`variable`, `create`, `allot`, `@`, `!`, `c@`, `c!`).
+**Previously:** counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j` (step 4);
+`1+`/`1-` plus iteration-pattern regression set (step 3); return-stack
+words `>r`/`r>`/`r@` (step 2); variables and memory (`variable`,
+`create`, `allot`, `@`, `!`, `c@`, `c!`).
 
 `allot` is interpret-time and accepts only literal positive integer sizes —
 matches standard Forth, keeps the parser obvious, and dodges the harder
@@ -50,6 +46,8 @@ make examples                     # macOS / Apple Silicon only
 ./examples/do-sum                 # 15
 ./examples/do-leave               # 14
 ./examples/do-nested              # 1 2 2 4 3 6  (3x2 multiplication table)
+./examples/recurse-fact           # 120  (5! via recursive factorial)
+./examples/constant-area          # 27   (3*3*3, where radius=3 is a constant)
 ```
 
 ## CLI
@@ -76,11 +74,12 @@ Source files must define `: main ... ;` as the entry point.
 
 See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done plus
 variables/memory, return-stack words, `1+`/`1-` plus iteration
-regression set, and counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j`
-as the first four post-MVP steps.
+regression set, counted loops, `recurse`, and `constant` as the first
+six post-MVP steps.
 
-Next per `next_step`: `recurse`, `constant`, `:noname`/`execute`,
-`include`, vendor zt's `core.fs` and write Forth-side tests.
+Next per `next_step`: `:noname`/`execute` for first-class quotations
+(unlocks zt's test runner pattern), `include` for source file
+composition, then vendor zt's `core.fs` and write Forth-side tests.
 
 Possible test infrastructure improvement: a Unicorn-based
 whole-program runner that loads the assembled Mach-O and runs colon

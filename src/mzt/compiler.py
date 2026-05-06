@@ -38,6 +38,7 @@ class _BodyState:
     cf_stack: ControlStack = field(default_factory=ControlStack)
     labels: _LabelGen = field(default_factory=_LabelGen)
     r_depth: int = 0
+    current_name: str = ""
 
 
 @dataclass
@@ -78,10 +79,33 @@ def _parse_top_level(cursor: "_PeekableTokens", state: _ProgramState) -> Iterato
             raise CompileError(
                 f"line {token.line}: 'allot' without a preceding 'create' definition"
             )
+        if token.kind == TokenKind.WORD and token.value == "constant":
+            raise CompileError(
+                f"line {token.line}: 'constant' without a preceding integer literal "
+                "(use as ': <num> constant <name>')"
+            )
+        if token.kind == TokenKind.NUMBER and _next_is_constant(cursor):
+            keyword = cursor.next()
+            yield _parse_constant(cursor, token, keyword, state)
+            continue
         raise CompileError(
             f"line {token.line}: expected ':', 'variable', or 'create' at top level, "
             f"got {token.value!r}"
         )
+
+
+def _next_is_constant(cursor: "_PeekableTokens") -> bool:
+    nxt = cursor.peek_at(0)
+    return nxt is not None and nxt.kind == TokenKind.WORD and nxt.value == "constant"
+
+
+def _parse_constant(
+    cursor: "_PeekableTokens", value_token: Token, keyword: Token, state: _ProgramState,
+) -> ColonDef:
+    name = _read_definition_name(cursor, keyword, "constant")
+    _check_name_available(name, keyword, state)
+    state.dictionary.register(name, kind="constant", source=keyword.source, line=keyword.line)
+    return ColonDef(name=name, body=(Literal(value_token.value),))
 
 
 def _parse_variable(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
@@ -150,7 +174,7 @@ def _parse_colon(cursor: "_PeekableTokens", colon_token: Token, state: _ProgramS
     if name_token is None or name_token.kind != TokenKind.WORD:
         raise CompileError(f"line {colon_token.line}: ':' must be followed by a word name")
     _check_name_available(name_token.value, colon_token, state)
-    body_state = _BodyState(labels=state.labels)
+    body_state = _BodyState(labels=state.labels, current_name=name_token.value)
     body = _parse_body(cursor, name_token, body_state)
     state.dictionary.register(
         name_token.value, kind="colon", source=colon_token.source, line=colon_token.line
@@ -317,6 +341,10 @@ def _emit_leave(state: _BodyState, token: Token) -> None:
     state.cells.append(Branch(target=frame.exit_label, conditional=False))
 
 
+def _emit_recurse(state: _BodyState, token: Token) -> None:
+    state.cells.append(ColonRef(state.current_name))
+
+
 def _pop_do_frame(state: _BodyState, token: Token, current: str) -> _DoFrame:
     try:
         frame = state.cf_stack.pop("do")
@@ -377,6 +405,7 @@ _CONTROL_HANDLERS = {
     "loop":   _close_loop,
     "+loop":  _close_plus_loop,
     "leave":  _emit_leave,
+    "recurse": _emit_recurse,
 }
 
 
