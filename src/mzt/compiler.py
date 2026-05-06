@@ -1,6 +1,8 @@
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 
+from mzt.control_stack import ControlStack, ControlStackError
+from mzt.dictionary import Dictionary
 from mzt.ir import Addr, Branch, Cell, ColonDef, ColonRef, Label, Literal, PrimRef, StringLit
 from mzt.primitives import is_primitive
 from mzt.tokenizer import Token, TokenKind, tokenize
@@ -26,14 +28,14 @@ class _LabelGen:
 @dataclass
 class _BodyState:
     cells: list[Cell] = field(default_factory=list)
-    cf_stack: list[tuple[str, int]] = field(default_factory=list)
+    cf_stack: ControlStack = field(default_factory=ControlStack)
     labels: _LabelGen = field(default_factory=_LabelGen)
 
 
 @dataclass
 class _ProgramState:
     bump: int = 0
-    defined_names: set[str] = field(default_factory=set)
+    dictionary: Dictionary = field(default_factory=Dictionary)
     labels: _LabelGen = field(default_factory=_LabelGen)
 
     def claim_address(self, size: int) -> int:
@@ -56,7 +58,7 @@ def _parse_top_level(cursor: "_PeekableTokens", state: _ProgramState) -> Iterato
     while not cursor.eof():
         token = cursor.next()
         if token.kind == TokenKind.COLON:
-            yield _parse_colon(cursor, token.line, state)
+            yield _parse_colon(cursor, token, state)
             continue
         if token.kind == TokenKind.WORD and token.value == "variable":
             yield _parse_variable(cursor, token, state)
@@ -76,18 +78,18 @@ def _parse_top_level(cursor: "_PeekableTokens", state: _ProgramState) -> Iterato
 
 def _parse_variable(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
     name = _read_definition_name(cursor, keyword, "variable")
-    _check_name_available(name, keyword.line, state)
+    _check_name_available(name, keyword, state)
     offset = state.claim_address(CELL_BYTES)
-    state.defined_names.add(name)
+    state.dictionary.register(name, kind="variable", source=keyword.source, line=keyword.line)
     return ColonDef(name=name, body=(Addr(offset),))
 
 
 def _parse_create(cursor: "_PeekableTokens", keyword: Token, state: _ProgramState) -> ColonDef:
     name = _read_definition_name(cursor, keyword, "create")
-    _check_name_available(name, keyword.line, state)
+    _check_name_available(name, keyword, state)
     offset = state.bump
     _consume_optional_allot(cursor, state)
-    state.defined_names.add(name)
+    state.dictionary.register(name, kind="create", source=keyword.source, line=keyword.line)
     return ColonDef(name=name, body=(Addr(offset),))
 
 
@@ -118,35 +120,33 @@ def _read_definition_name(cursor: "_PeekableTokens", keyword: Token, kind: str) 
     return name_token.value
 
 
-def _check_name_available(name: str, line: int, state: _ProgramState) -> None:
+def _check_name_available(name: str, keyword: Token, state: _ProgramState) -> None:
     if name in _CONTROL_HANDLERS:
         raise CompileError(
-            f"line {line}: cannot define {name!r} — it is a control-flow keyword"
+            f"line {keyword.line}: cannot define {name!r} — it is a control-flow keyword"
         )
     if is_primitive(name):
         raise CompileError(
-            f"line {line}: cannot define {name!r} — it is a built-in primitive"
+            f"line {keyword.line}: cannot define {name!r} — it is a built-in primitive"
         )
-    if name in state.defined_names:
+    previous = state.dictionary.get(name)
+    if previous is not None:
         raise CompileError(
-            f"line {line}: {name!r} is already defined"
+            f"line {keyword.line}: {name!r} is already defined "
+            f"(first defined at {previous.source}:{previous.line})"
         )
 
 
-def _parse_colon(cursor: "_PeekableTokens", colon_line: int, state: _ProgramState) -> ColonDef:
+def _parse_colon(cursor: "_PeekableTokens", colon_token: Token, state: _ProgramState) -> ColonDef:
     name_token = cursor.next() if not cursor.eof() else None
     if name_token is None or name_token.kind != TokenKind.WORD:
-        raise CompileError(f"line {colon_line}: ':' must be followed by a word name")
-    if name_token.value in _CONTROL_HANDLERS:
-        raise CompileError(
-            f"line {colon_line}: cannot define a colon word named {name_token.value!r} "
-            "(it is a control-flow keyword)"
-        )
-    if name_token.value in state.defined_names:
-        raise CompileError(f"line {colon_line}: {name_token.value!r} is already defined")
+        raise CompileError(f"line {colon_token.line}: ':' must be followed by a word name")
+    _check_name_available(name_token.value, colon_token, state)
     body_state = _BodyState(labels=state.labels)
     body = _parse_body(cursor, name_token, body_state)
-    state.defined_names.add(name_token.value)
+    state.dictionary.register(
+        name_token.value, kind="colon", source=colon_token.source, line=colon_token.line
+    )
     return ColonDef(name=name_token.value, body=body)
 
 
@@ -192,7 +192,7 @@ def _resolve_word(name: str) -> Cell:
 def _open_if(state: _BodyState, token: Token) -> None:
     label = state.labels.fresh()
     state.cells.append(Branch(target=label, conditional=True))
-    state.cf_stack.append(("orig", label))
+    state.cf_stack.push("orig", label)
 
 
 def _switch_to_else(state: _BodyState, token: Token) -> None:
@@ -200,7 +200,7 @@ def _switch_to_else(state: _BodyState, token: Token) -> None:
     skip = state.labels.fresh()
     state.cells.append(Branch(target=skip, conditional=False))
     state.cells.append(Label(if_label))
-    state.cf_stack.append(("orig", skip))
+    state.cf_stack.push("orig", skip)
 
 
 def _close_then(state: _BodyState, token: Token) -> None:
@@ -211,7 +211,7 @@ def _close_then(state: _BodyState, token: Token) -> None:
 def _open_begin(state: _BodyState, token: Token) -> None:
     label = state.labels.fresh()
     state.cells.append(Label(label))
-    state.cf_stack.append(("dest", label))
+    state.cf_stack.push("dest", label)
 
 
 def _close_until(state: _BodyState, token: Token) -> None:
@@ -225,11 +225,11 @@ def _close_again(state: _BodyState, token: Token) -> None:
 
 
 def _open_while(state: _BodyState, token: Token) -> None:
-    if not state.cf_stack or state.cf_stack[-1][0] != "dest":
+    if not state.cf_stack or state.cf_stack.peek()[0] != "dest":
         raise CompileError(f"line {token.line}: 'while' without matching 'begin'")
     skip = state.labels.fresh()
     state.cells.append(Branch(target=skip, conditional=True))
-    state.cf_stack.append(("orig", skip))
+    state.cf_stack.push("orig", skip)
 
 
 def _close_repeat(state: _BodyState, token: Token) -> None:
@@ -240,15 +240,20 @@ def _close_repeat(state: _BodyState, token: Token) -> None:
 
 
 def _pop_orig(state: _BodyState, token: Token, current: str, expected: str) -> int:
-    if not state.cf_stack or state.cf_stack[-1][0] != "orig":
-        raise CompileError(f"line {token.line}: {current!r} without matching {expected!r}")
-    return state.cf_stack.pop()[1]
+    return _pop_tagged(state, token, "orig", current, expected)
 
 
 def _pop_dest(state: _BodyState, token: Token, current: str, expected: str) -> int:
-    if not state.cf_stack or state.cf_stack[-1][0] != "dest":
-        raise CompileError(f"line {token.line}: {current!r} without matching {expected!r}")
-    return state.cf_stack.pop()[1]
+    return _pop_tagged(state, token, "dest", current, expected)
+
+
+def _pop_tagged(state: _BodyState, token: Token, tag: str, current: str, expected: str) -> int:
+    try:
+        return state.cf_stack.pop(tag)
+    except ControlStackError:
+        raise CompileError(
+            f"line {token.line}: {current!r} without matching {expected!r}"
+        ) from None
 
 
 _CONTROL_HANDLERS = {
