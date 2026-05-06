@@ -18,6 +18,7 @@ class _StringTable:
 
 
 def emit_program(defs: list[ColonDef], user_memory_bytes: int = 0) -> str:
+    _check_label_collisions(defs)
     strings = _StringTable()
     parts = [runtime_preamble()]
     parts.extend(_emit_colon_def(d, strings) for d in defs)
@@ -27,10 +28,25 @@ def emit_program(defs: list[ColonDef], user_memory_bytes: int = 0) -> str:
     return "".join(parts)
 
 
+def _check_label_collisions(defs: list[ColonDef]) -> None:
+    label_to_names: dict[str, list[str]] = {}
+    for d in defs:
+        label_to_names.setdefault(_word_label(d.name), []).append(d.name)
+    collisions = {label: names for label, names in label_to_names.items() if len(names) > 1}
+    if collisions:
+        report = "; ".join(
+            f"{names!r} all sanitize to {label!r}"
+            for label, names in collisions.items()
+        )
+        raise ValueError(
+            f"colon-name sanitization collision (hyphens become underscores): {report}"
+        )
+
+
 def _emit_colon_def(d: ColonDef, strings: _StringTable) -> str:
     body = "".join(_emit_cell(c, strings) for c in d.body)
     return (
-        f"_word_{d.name}:\n"
+        f"{_word_label(d.name)}:\n"
         f"    stp     x29, x30, [sp, #-16]!\n"
         f"    mov     x29, sp\n"
         f"{body}"
@@ -48,7 +64,7 @@ def _emit_cell(cell: Cell, strings: _StringTable) -> str:
             return prim.body
         return f"    bl      {prim.label}\n"
     if isinstance(cell, ColonRef):
-        return f"    bl      _word_{cell.name}\n"
+        return f"    bl      {_word_label(cell.name)}\n"
     if isinstance(cell, Label):
         return f"L{cell.id}:\n"
     if isinstance(cell, Branch):
@@ -58,6 +74,10 @@ def _emit_cell(cell: Cell, strings: _StringTable) -> str:
     if isinstance(cell, Addr):
         return _emit_addr(cell)
     raise TypeError(f"unknown IR cell {cell!r}")
+
+
+def _word_label(name: str) -> str:
+    return "_word_" + name.replace("-", "_")
 
 
 def _emit_addr(addr: Addr) -> str:

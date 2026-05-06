@@ -283,3 +283,45 @@ def test_runtime_user_mem_rounded_up_to_16():
     asm = emit_program([ColonDef("main", ())], user_memory_bytes=33)
     assert ".zerofill __DATA,__bss,Luser_mem,48,3" in asm, \
         "Luser_mem block should be rounded up to a 16-byte boundary"
+
+
+def test_hyphenated_word_name_produces_legal_asm_label():
+    asm = emit_program([ColonDef("paint-row", (Literal(1),))])
+    assert "_word_paint-row:" not in asm, \
+        "raw hyphen in label name produces clang 'unexpected token' (parsed as subtraction)"
+    assert "_word_paint_row:" in asm, \
+        "hyphens in Forth names must be sanitized to underscores in asm labels"
+
+
+def test_hyphenated_colon_ref_uses_sanitized_label():
+    defs = [
+        ColonDef("paint-row", (Literal(1),)),
+        ColonDef("main", (ColonRef("paint-row"),)),
+    ]
+    asm = emit_program(defs)
+    assert "bl      _word_paint_row" in asm, \
+        "ColonRef to a hyphenated name must call its sanitized label"
+    assert "bl      _word_paint-row" not in asm, \
+        "the raw hyphenated form must not appear in any bl"
+
+
+def test_definition_and_reference_labels_round_trip():
+    defs = [
+        ColonDef("a-b-c", (Literal(0),)),
+        ColonDef("main",  (ColonRef("a-b-c"),)),
+    ]
+    asm = emit_program(defs)
+    label_def = "_word_a_b_c:"
+    label_ref = "bl      _word_a_b_c"
+    assert label_def in asm and label_ref in asm, \
+        "every hyphen in the source name maps to underscore in BOTH the label " \
+        "definition and its references; otherwise the linker can't resolve"
+
+
+def test_sanitization_collision_is_detected():
+    defs = [
+        ColonDef("a-b", (Literal(1),)),
+        ColonDef("a_b", (Literal(2),)),
+    ]
+    with pytest.raises(ValueError, match="sanitiz"):
+        emit_program(defs)
