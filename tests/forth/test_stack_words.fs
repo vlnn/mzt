@@ -15,14 +15,3 @@ include test-lib.fs
 : test-square      6 square 36 assert-eq ;
 : test-?dup-zero   0 ?dup 0 assert-eq ;
 : test-?dup-five   5 ?dup 5 assert-eq 5 assert-eq ;
-
-: main
-    test-2dup
-    test-tuck
-    test-rot
-    test-min-pos
-    test-min-neg
-    test-max-pos
-    test-square
-    test-?dup-zero
-    test-?dup-five ;

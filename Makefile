@@ -1,9 +1,16 @@
 FS_EXAMPLES := $(patsubst %.fs,%,$(wildcard examples/*.fs))
+FORTH_TESTS := $(wildcard tests/forth/test_*.fs)
 
-.PHONY: test examples clean
+.PHONY: test forth-test examples clean
 
 test:
 	uv run pytest
+
+# Run only the Forth-side tests. Each `: test-*` colon definition in
+# tests/forth/test_*.fs becomes one pytest item via conftest.py.
+# Adding a new test = drop a test_*.fs file in tests/forth/.
+forth-test:
+	uv run pytest tests/forth/ -v
 
 examples: examples/hello $(FS_EXAMPLES)
 

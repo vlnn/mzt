@@ -32,6 +32,22 @@ def build_source(
     return build(asm, out_path)
 
 
+def build_source_text(
+    source: str,
+    out_path: Path,
+    *,
+    source_path: "Path | None" = None,
+    include_dirs: "list[Path] | None" = None,
+) -> Path:
+    """Build from in-memory source text. `source_path` is used for include
+    resolution but isn't read from disk — useful when synthesising programs
+    based on existing source files."""
+    asm = compile_to_asm(
+        source, source_path=source_path, include_dirs=include_dirs,
+    )
+    return build(asm, out_path)
+
+
 def compile_to_asm(
     source: str,
     *,

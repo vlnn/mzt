@@ -77,6 +77,25 @@ Source files must define `: main ... ;` as the entry point.
   subprocess cost.
 - **End-to-end** via `clang` and the produced Mach-O binary; gated to
   `sys.platform == "darwin"`.
+- **Forth-side**: every `tests/**/test_*.fs` file is collected by
+  `conftest.py` as a pytest module, and each `: test-foo ;` colon
+  definition inside it becomes one pytest item — same workflow as
+  Python `test_*.py` files. The test library (`tests/forth/test-lib.fs`)
+  provides `assert-eq` / `assert-true` / `assert-false`, which call
+  `halt` with non-zero exit on failure. *Adding a new test is dropping
+  a `test_*.fs` file in any pytest directory* — pytest discovers it
+  next run.
+
+  ```bash
+  pytest tests/forth/                                          # all Forth tests
+  pytest tests/forth/ -v                                       # see each : test-* word
+  pytest -k arithmetic                                         # filter by word name
+  pytest tests/forth/test_arithmetic.fs::test-addition         # run a single word
+  make forth-test                                              # convenience target
+  ```
+
+  Skipped on non-Apple-Silicon machines (clang produces Mach-O arm64
+  binaries that only run there).
 
 ## Roadmap
 
