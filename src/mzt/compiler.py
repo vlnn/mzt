@@ -25,6 +25,13 @@ class _LabelGen:
         return i
 
 
+@dataclass(frozen=True)
+class _DoFrame:
+    back_label: int
+    exit_label: int
+    saved_r_depth: int
+
+
 @dataclass
 class _BodyState:
     cells: list[Cell] = field(default_factory=list)
@@ -178,6 +185,8 @@ def _consume_token(token: Token, state: _BodyState, name_token: Token) -> None:
         _CONTROL_HANDLERS[token.value](state, token)
         return
     cell = _to_cell(token)
+    if isinstance(cell, PrimRef) and cell.name in _LOOP_INDEX_PRIMITIVES:
+        _require_loop_depth(state, token, cell.name, 1)
     state.cells.append(cell)
     _track_return_stack(cell, token, state, name_token)
 
@@ -270,6 +279,74 @@ def _close_repeat(state: _BodyState, token: Token) -> None:
     state.cells.append(Label(while_orig))
 
 
+def _open_do(state: _BodyState, token: Token) -> None:
+    state.cells.append(PrimRef("(do)"))
+    back = state.labels.fresh()
+    exit_label = state.labels.fresh()
+    state.cells.append(Label(back))
+    state.cf_stack.push("do", _DoFrame(
+        back_label=back, exit_label=exit_label, saved_r_depth=state.r_depth,
+    ))
+
+
+def _close_loop(state: _BodyState, token: Token) -> None:
+    _close_loop_with(state, token, "loop", "(loop)")
+
+
+def _close_plus_loop(state: _BodyState, token: Token) -> None:
+    _close_loop_with(state, token, "+loop", "(+loop)")
+
+
+def _close_loop_with(state: _BodyState, token: Token, current: str, test_prim: str) -> None:
+    frame = _pop_do_frame(state, token, current)
+    _require_balanced_return_stack(state, token, frame, current)
+    state.cells.append(PrimRef(test_prim))
+    state.cells.append(Branch(target=frame.back_label, conditional=True))
+    state.cells.append(Label(frame.exit_label))
+    state.cells.append(PrimRef("unloop"))
+
+
+def _emit_leave(state: _BodyState, token: Token) -> None:
+    found = state.cf_stack.find_innermost("do")
+    if found is None:
+        raise CompileError(
+            f"line {token.line}: 'leave' outside any 'do' loop"
+        )
+    _, frame = found
+    _require_balanced_return_stack(state, token, frame, "leave")
+    state.cells.append(Branch(target=frame.exit_label, conditional=False))
+
+
+def _pop_do_frame(state: _BodyState, token: Token, current: str) -> _DoFrame:
+    try:
+        frame = state.cf_stack.pop("do")
+    except ControlStackError:
+        raise CompileError(
+            f"line {token.line}: {current!r} without matching 'do'"
+        ) from None
+    return frame
+
+
+def _require_balanced_return_stack(
+    state: _BodyState, token: Token, frame: _DoFrame, current: str,
+) -> None:
+    if state.r_depth != frame.saved_r_depth:
+        raise CompileError(
+            f"line {token.line}: {current!r} with unbalanced return stack "
+            f"(was {frame.saved_r_depth} at 'do', is {state.r_depth} now); "
+            "every >r inside the loop body must be matched by an r> before this point"
+        )
+
+
+def _require_loop_depth(state: _BodyState, token: Token, name: str, depth: int) -> None:
+    count = sum(1 for tag, _ in state.cf_stack if tag == "do")
+    if count < depth:
+        raise CompileError(
+            f"line {token.line}: {name!r} requires being inside at least {depth} "
+            f"nested 'do' loop(s); currently inside {count}"
+        )
+
+
 def _pop_orig(state: _BodyState, token: Token, current: str, expected: str) -> int:
     return _pop_tagged(state, token, "orig", current, expected)
 
@@ -296,7 +373,14 @@ _CONTROL_HANDLERS = {
     "again":  _close_again,
     "while":  _open_while,
     "repeat": _close_repeat,
+    "do":     _open_do,
+    "loop":   _close_loop,
+    "+loop":  _close_plus_loop,
+    "leave":  _emit_leave,
 }
+
+
+_LOOP_INDEX_PRIMITIVES = {"i", "j"}
 
 
 @dataclass

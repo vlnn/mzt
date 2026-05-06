@@ -9,19 +9,20 @@ IR, and peephole passes are reusable, the back end is rewritten for AArch64.
 
 ## Status
 
-**Post-MVP step 3 — `1+` / `1-` and the iteration regression set.**
-Two trivial increment/decrement primitives, three-instruction kernels.
-A `regress-iter-*.fs` set covering countdown, accumulator over 1..N (which
-also exercises Step-2's `>r`/`r>`), and bounded search — all written
-against the existing M3 `begin` loops. They lock the pattern set that
-step 4's `do`/`loop` will replace ergonomically, and demonstrate by
-construction that counted loops are sugar over what the language already
-expresses.
+**Post-MVP step 4 — counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j`.**
+Six new primitives (`(do)`, `(loop)`, `(+loop)`, `unloop`, `i`, `j`) plus
+six new control words. `do` pushes `(limit, index)` onto the rstack;
+`loop` increments and tests; `+loop` handles signed steps with the
+`(old < limit) != (new < limit)` crossing test from ANS Forth; `leave`
+walks the control stack via `find_innermost("do")` and emits an
+unconditional branch to the loop's exit label. `i` and `j` read top
+and offset-16 of the rstack. The compiler tracks user-visible
+return-stack depth across loop boundaries: `>r` inside a loop body
+must be matched by `r>` before `loop`/`+loop`/`leave`.
 
-**Previously:** `>r`, `r>`, `r@` (return-stack words on `x20`) and
-variables/memory (`variable`, `create`, `allot`, `@`, `!`, `c@`, `c!`).
-The compiler tracks return-stack depth per colon body and rejects
-unbalanced bodies at `;`.
+**Previously:** `1+`/`1-` plus the iteration-pattern regression set
+(step 3); return-stack words `>r`/`r>`/`r@` (step 2); variables and
+memory (`variable`, `create`, `allot`, `@`, `!`, `c@`, `c!`).
 
 `allot` is interpret-time and accepts only literal positive integer sizes —
 matches standard Forth, keeps the parser obvious, and dodges the harder
@@ -45,6 +46,10 @@ make examples                     # macOS / Apple Silicon only
 ./examples/regress-iter-countdown # 5 4 3 2 1
 ./examples/regress-iter-sum       # 15
 ./examples/regress-iter-search    # 12
+./examples/do-count               # 0 1 2 3 4
+./examples/do-sum                 # 15
+./examples/do-leave               # 14
+./examples/do-nested              # 1 2 2 4 3 6  (3x2 multiplication table)
 ```
 
 ## CLI
@@ -70,10 +75,16 @@ Source files must define `: main ... ;` as the entry point.
 ## Roadmap
 
 See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done plus
-variables/memory, return-stack words, and `1+`/`1-` plus the
-iteration-pattern regression set as the first three post-MVP steps.
+variables/memory, return-stack words, `1+`/`1-` plus iteration
+regression set, and counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j`
+as the first four post-MVP steps.
 
-Next per `next_step`: counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j`
-(step 4), built on the return-stack discipline already in place. Beyond
-that: `recurse`, `constant`, `:noname`/`execute`, `include`, vendor
-`core.fs` and write Forth-side tests.
+Next per `next_step`: `recurse`, `constant`, `:noname`/`execute`,
+`include`, vendor zt's `core.fs` and write Forth-side tests.
+
+Possible test infrastructure improvement: a Unicorn-based
+whole-program runner that loads the assembled Mach-O and runs colon
+words on Linux (no Apple Silicon required), covering iteration
+behaviour without `printf`/`write` stubs by using non-IO test
+programs that leave results on the data stack. The prototype works;
+not yet wired in.

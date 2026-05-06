@@ -14,6 +14,7 @@ M2_NAMES = [
     "zero",
     "@", "!", "c@", "c!",
     ">r", "r>", "r@",
+    "(do)", "(loop)", "(+loop)", "unloop", "i", "j",
 ]
 
 
@@ -25,12 +26,13 @@ def test_known_primitives(name):
 
 @pytest.mark.parametrize(
     "name",
-    ["if", "then", "else", "begin", "until", "do", "loop",
+    ["if", "then", "else", "begin", "until",
+     "do", "loop", "+loop", "leave",
      "variable", "made-up-word", ""],
 )
 def test_unknown_primitives(name):
     assert not is_primitive(name), \
-        f"{name!r} should NOT be a primitive yet (lands in later milestones)"
+        f"{name!r} should NOT be a primitive (it's a control word handled by the compiler, not the registry)"
 
 
 @pytest.mark.parametrize("name", M2_NAMES)
@@ -97,6 +99,12 @@ _LOCKED_LABELS = {
     ">r":     "_to_r",
     "r>":     "_r_from",
     "r@":     "_r_fetch",
+    "(do)":    "_do_init",
+    "(loop)":  "_loop_test",
+    "(+loop)": "_plus_loop_test",
+    "unloop":  "_unloop",
+    "i":       "_loop_i",
+    "j":       "_loop_j",
 }
 
 

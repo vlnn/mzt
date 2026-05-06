@@ -196,6 +196,57 @@ _R_FETCH = (
 )
 
 
+_DO_INIT = (
+    "    ldr     x0, [x19], #8\n"
+    "    ldr     x1, [x19], #8\n"
+    "    str     x1, [x20, #-8]!\n"
+    "    str     x0, [x20, #-8]!\n"
+)
+
+
+_LOOP_TEST = (
+    "    ldr     x0, [x20]\n"
+    "    add     x0, x0, #1\n"
+    "    str     x0, [x20]\n"
+    "    ldr     x1, [x20, #8]\n"
+    "    cmp     x0, x1\n"
+    "    csetm   x0, eq\n"
+    "    str     x0, [x19, #-8]!\n"
+)
+
+
+_PLUS_LOOP_TEST = (
+    "    ldr     x0, [x19], #8\n"
+    "    ldr     x1, [x20]\n"
+    "    add     x3, x1, x0\n"
+    "    str     x3, [x20]\n"
+    "    ldr     x2, [x20, #8]\n"
+    "    cmp     x1, x2\n"
+    "    csetm   x4, lt\n"
+    "    cmp     x3, x2\n"
+    "    csetm   x5, lt\n"
+    "    eor     x6, x4, x5\n"
+    "    cmp     x6, #0\n"
+    "    csetm   x0, ne\n"
+    "    str     x0, [x19, #-8]!\n"
+)
+
+
+_UNLOOP = "    add     x20, x20, #16\n"
+
+
+_LOOP_I = (
+    "    ldr     x0, [x20]\n"
+    "    str     x0, [x19, #-8]!\n"
+)
+
+
+_LOOP_J = (
+    "    ldr     x0, [x20, #16]\n"
+    "    str     x0, [x19, #-8]!\n"
+)
+
+
 _PRIMITIVES: dict[str, Primitive] = {
     p.name: p for p in [
         Primitive("zero",   "_zero",   "    str     xzr, [x19, #-8]!\n", inline=True),
@@ -231,6 +282,12 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive(">r",     "_to_r",    _TO_R),
         Primitive("r>",     "_r_from",  _R_FROM),
         Primitive("r@",     "_r_fetch", _R_FETCH),
+        Primitive("(do)",    "_do_init",        _DO_INIT),
+        Primitive("(loop)",  "_loop_test",      _LOOP_TEST),
+        Primitive("(+loop)", "_plus_loop_test", _PLUS_LOOP_TEST),
+        Primitive("unloop",  "_unloop",         _UNLOOP),
+        Primitive("i",       "_loop_i",         _LOOP_I),
+        Primitive("j",       "_loop_j",         _LOOP_J),
     ]
 }
 

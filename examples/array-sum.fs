@@ -1,6 +1,6 @@
 \ Array of 5 cells filled with 1..5, summed via a counter held in a variable.
 create xs 40 allot
-variable i
+variable idx
 variable acc
 
 : store-fives
@@ -12,13 +12,13 @@ variable acc
 
 : sum-xs
     0 acc !
-    0 i !
+    0 idx !
     begin
-        i @ 5 <
+        idx @ 5 <
     while
-        xs i @ 8 * + @
+        xs idx @ 8 * + @
         acc @ + acc !
-        i @ 1 + i !
+        idx @ 1 + idx !
     repeat ;
 
 : main
