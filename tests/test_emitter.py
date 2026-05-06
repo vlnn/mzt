@@ -51,6 +51,8 @@ def test_literal_pushes_via_pre_decrement():
         ("-",      "bl      _minus"),
         ("*",      "bl      _star"),
         ("/mod",   "bl      _divmod"),
+        ("1+",     "bl      _one_plus"),
+        ("1-",     "bl      _one_minus"),
         ("=",      "bl      _eq"),
         ("<",      "bl      _lt"),
         (">",      "bl      _gt"),

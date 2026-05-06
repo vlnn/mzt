@@ -49,6 +49,16 @@ CASES = [
     ("/mod",   [-7, 2],         [-1, -3]),
     ("/mod",   [7, -2],         [1, -3]),
 
+    ("1+",     [0],             [1]),
+    ("1+",     [41],            [42]),
+    ("1+",     [-1],            [0]),
+    ("1+",     [99, 7],         [99, 8]),
+
+    ("1-",     [1],             [0]),
+    ("1-",     [42],            [41]),
+    ("1-",     [0],             [-1]),
+    ("1-",     [99, 8],         [99, 7]),
+
     ("=",      [5, 5],          [-1]),
     ("=",      [5, 6],          [0]),
     ("=",      [-1, -1],        [-1]),
@@ -110,12 +120,14 @@ def test_primitive_behavior(name, stack_in, stack_out):
     "name",
     ["dup", "drop", "swap", "over", "nip", "rot",
      "+", "-", "*", "and", "or", "xor",
-     "invert", "negate", "abs", "0=", "=", "<", ">"],
+     "invert", "negate", "abs", "0=", "=", "<", ">",
+     "1+", "1-"],
 )
 def test_primitive_preserves_deep_stack(name):
     sentinel = 0x0BADBADC0FFEE
     depth_needed = {
         "dup": 1, "drop": 1, "0=": 1, "invert": 1, "negate": 1, "abs": 1,
+        "1+": 1, "1-": 1,
         "swap": 2, "over": 2, "nip": 2,
         "+": 2, "-": 2, "*": 2,
         "and": 2, "or": 2, "xor": 2,

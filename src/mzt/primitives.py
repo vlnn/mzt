@@ -36,6 +36,14 @@ def _unary_in_place(op: str) -> str:
     )
 
 
+def _unary_inc(op: str) -> str:
+    return (
+        "    ldr     x0, [x19]\n"
+        f"    {op}     x0, x0, #1\n"
+        "    str     x0, [x19]\n"
+    )
+
+
 _DUP = (
     "    ldr     x0, [x19]\n"
     "    str     x0, [x19, #-8]!\n"
@@ -201,6 +209,8 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive("-",      "_minus",  _binary_op("sub")),
         Primitive("*",      "_star",   _binary_op("mul")),
         Primitive("/mod",   "_divmod", _DIVMOD),
+        Primitive("1+",     "_one_plus",  _unary_inc("add")),
+        Primitive("1-",     "_one_minus", _unary_inc("sub")),
         Primitive("=",      "_eq",     _comparison("eq")),
         Primitive("<",      "_lt",     _comparison("lt")),
         Primitive(">",      "_gt",     _comparison("gt")),

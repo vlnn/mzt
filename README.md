@@ -9,18 +9,19 @@ IR, and peephole passes are reusable, the back end is rewritten for AArch64.
 
 ## Status
 
-**Post-MVP step 2 — return-stack words.** `>r`, `r>`, `r@` move cells
-between the data stack (`x19`) and a second pinned, callee-saved stack
-in `x20`. The runtime reserves `Lrstack_base` (4 KB) in `.bss` and
-`_main` initialises `x20` to its top. The compiler tracks return-stack
-depth per colon body: `>r` increments, `r>`/`r@` underflow if depth is
-zero, and `;` rejects unbalanced bodies with a message naming the
-definition. `r_depth` resets between definitions.
+**Post-MVP step 3 — `1+` / `1-` and the iteration regression set.**
+Two trivial increment/decrement primitives, three-instruction kernels.
+A `regress-iter-*.fs` set covering countdown, accumulator over 1..N (which
+also exercises Step-2's `>r`/`r>`), and bounded search — all written
+against the existing M3 `begin` loops. They lock the pattern set that
+step 4's `do`/`loop` will replace ergonomically, and demonstrate by
+construction that counted loops are sugar over what the language already
+expresses.
 
-**Previously:** variables and memory (`variable`, `create`, `allot`,
-`@`, `!`, `c@`, `c!`) compile against a single `Luser_mem` `.zerofill`
-block sized per-program; addresses resolve via `adrp/add` to the
-block's base plus a bump-pointer offset.
+**Previously:** `>r`, `r>`, `r@` (return-stack words on `x20`) and
+variables/memory (`variable`, `create`, `allot`, `@`, `!`, `c@`, `c!`).
+The compiler tracks return-stack depth per colon body and rejects
+unbalanced bodies at `;`.
 
 `allot` is interpret-time and accepts only literal positive integer sizes —
 matches standard Forth, keeps the parser obvious, and dodges the harder
@@ -41,6 +42,9 @@ make examples                     # macOS / Apple Silicon only
 ./examples/fact                   # 120
 ./examples/rstack                 # 50
 ./examples/rstack-stash           # 56
+./examples/regress-iter-countdown # 5 4 3 2 1
+./examples/regress-iter-sum       # 15
+./examples/regress-iter-search    # 12
 ```
 
 ## CLI
@@ -66,9 +70,10 @@ Source files must define `: main ... ;` as the entry point.
 ## Roadmap
 
 See `MVP_Plan` for the milestone breakdown (M0 → M6). M0–M5 done plus
-variables/memory and return-stack words as the first two post-MVP steps.
+variables/memory, return-stack words, and `1+`/`1-` plus the
+iteration-pattern regression set as the first three post-MVP steps.
 
-Next per `next_step`: `1+`/`1-` plus iteration regression examples
-(step 2), then counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j`
-(step 3). Beyond that: `recurse`, `constant`, `:noname`/`execute`,
-`include`, vendor `core.fs` and write Forth-side tests.
+Next per `next_step`: counted loops `do`/`loop`/`+loop`/`leave`/`i`/`j`
+(step 4), built on the return-stack discipline already in place. Beyond
+that: `recurse`, `constant`, `:noname`/`execute`, `include`, vendor
+`core.fs` and write Forth-side tests.

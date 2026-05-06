@@ -6,6 +6,7 @@ from mzt.primitives import all_primitives, is_primitive, primitive
 M2_NAMES = [
     "dup", "drop", "swap", "over", "nip", "rot",
     "+", "-", "*", "/mod",
+    "1+", "1-",
     "=", "<", ">", "0=",
     "and", "or", "xor", "invert",
     "negate", "abs",
@@ -74,6 +75,8 @@ _LOCKED_LABELS = {
     "-":      "_minus",
     "*":      "_star",
     "/mod":   "_divmod",
+    "1+":     "_one_plus",
+    "1-":     "_one_minus",
     "=":      "_eq",
     "<":      "_lt",
     ">":      "_gt",
