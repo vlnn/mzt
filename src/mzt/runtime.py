@@ -27,6 +27,11 @@ def _entry_point() -> str:
 _main:
     stp     x29, x30, [sp, #-16]!
     mov     x29, sp
+    adrp    x0, ___stdoutp@GOTPAGE
+    ldr     x0, [x0, ___stdoutp@GOTPAGEOFF]
+    ldr     x0, [x0]
+    mov     x1, #0
+    bl      _setbuf
     adrp    x19, Ldstack_base@PAGE
     add     x19, x19, Ldstack_base@PAGEOFF
     add     x19, x19, #{DSTACK_BYTES}
