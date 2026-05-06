@@ -77,6 +77,18 @@ class JitRegion:
             self.append_u32(word)
         return first
 
+    def append_bytes(self, payload: bytes) -> int:
+        if len(payload) % INSTR_SIZE != 0:
+            raise JitWriteError(
+                f"append_bytes payload must be 4-byte aligned; got {len(payload)} bytes"
+            )
+        self._require_writable()
+        self._require_capacity(len(payload))
+        target = self.here()
+        ctypes.memmove(target, payload, len(payload))
+        self._cursor += len(payload)
+        return target
+
     def patch_u32(self, address: int, instruction: int) -> None:
         self._require_writable()
         self._require_in_region(address, INSTR_SIZE)

@@ -149,6 +149,33 @@ def test_append_writes_little_endian(region):
         f"u32 should be written little-endian; got {raw!r}"
 
 
+def test_append_bytes_outside_writable_block_raises(region):
+    with pytest.raises(JitWriteError, match="writable"):
+        region.append_bytes(b"\x00\x00\x00\x00")
+
+
+def test_append_bytes_writes_payload_verbatim(region):
+    payload = b"\x01\x02\x03\x04\x05\x06\x07\x08"
+    with region.writable():
+        addr = region.append_bytes(payload)
+    raw = bytes((ctypes.c_ubyte * len(payload)).from_address(addr))
+    assert raw == payload, \
+        f"payload should be written verbatim; got {raw!r}"
+
+
+def test_append_bytes_advances_cursor_by_payload_size(region):
+    with region.writable():
+        region.append_bytes(b"\x00" * 16)
+    assert region.cursor == 16, \
+        f"16-byte payload should advance cursor by 16; got {region.cursor}"
+
+
+def test_append_bytes_rejects_unaligned_payload(region):
+    with region.writable():
+        with pytest.raises(JitWriteError, match="aligned"):
+            region.append_bytes(b"\x00\x00\x00")
+
+
 def test_writable_context_toggles_writable_state(region, fake_libc):
     with region.writable():
         pass

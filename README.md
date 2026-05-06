@@ -119,7 +119,7 @@ Source files must define `: main ... ;` as the entry point.
 ## JIT backend (work in progress)
 
 A REPL-oriented JIT backend lives at `src/mzt/jit/` alongside the
-clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–4.
+clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–5.
 
 **Step 1 — JIT memory region.** `JitRegion` wraps `mmap(MAP_JIT)` plus
 `pthread_jit_write_protect_np`, exposes a `with region.writable():`
@@ -190,6 +190,30 @@ that primitive calls reach (including a 200TB-distant address that
 `bl` could never have hit), branches resolve correctly, and
 `ColonRef` between two JIT'd bodies works.
 
+**Step 5 — JitExecutor.** `src/mzt/jit/executor.py::JitExecutor` is
+the high-level facade that ties the previous four pieces together.
+`JitExecutor.open()` builds (or reuses) the host dylib, loads it
+via `ctypes.CDLL`, resolves the primitive table, allocates an 8MB
+`JitRegion`, and queries the dylib for the data and return stack
+tops via two tiny exported getters. `compile(name, cells)` runs the
+emitter and writes the bytes into the region, recording the body's
+address by name. `execute(addr)` calls into a tiny ARM64 trampoline
+baked into the host dylib that loads x19/x20 from Python-supplied
+arguments, `blr`s into the JIT'd body, and writes the post-execution
+x19/x20 back through out-pointers so Python can read the new stack
+state. `read_dstack()` and `read_rstack()` walk those pointers in
+the host's address space (since the dylib's bss lives there) to
+return the stacks as Python lists, bottom-to-top — matching the
+AOT executor's convention.
+
+The executor takes its dependencies (primitives, region, trampoline
+callable, stack tops) by injection in `__init__`, so pure-logic
+tests can substitute fakes without ever touching ctypes or the JIT
+region's `mmap(MAP_JIT)` syscall. Only `JitExecutor.open()` wires
+the real ones. 15 pure-logic tests + 4 platform-gated tests (build
+the dylib, compile `2 3 +`, execute, assert stack == [5]; same for
+a colon-ref calling another JIT'd word; reset behaviour).
+
 ### Smoke tests
 
 ```bash
@@ -224,11 +248,13 @@ Then:
 uv run python examples/jit_smoke.py             # JIT'd function returned 42
 uv run python examples/jit_host_lib_smoke.py    # builds dylib, resolves all primitives
 uv run python examples/jit_emitter_smoke.py     # runs the IR emitter pipeline
+uv run python examples/jit_executor_smoke.py    # full end-to-end: 2 3 + via JIT
 ```
 
 `jit_host_lib_smoke.py` and `jit_emitter_smoke.py` do not need the
-JIT entitlement — they only do dlsym and Unicorn emulation. Only
-`jit_smoke.py` exercises real `mmap(MAP_JIT)`.
+JIT entitlement — they only do dlsym and Unicorn emulation. The
+real-execution examples (`jit_smoke.py` and `jit_executor_smoke.py`)
+do exercise `mmap(MAP_JIT)` and need the entitlement.
 
 Without the entitlement, every `mmap(MAP_JIT)` call returns
 `MAP_FAILED` and `jit_smoke.py` prints an allocation error.
@@ -254,4 +280,4 @@ Beyond `next_step`:
   dependency).
 - In progress: REPL with runtime word compilation
   (`MAP_JIT`/`pthread_jit_write_protect_np`/JIT entitlement). Steps
-  1–4 of `JIT_Plan` shipped; see "JIT backend" above.
+  1–5 of `JIT_Plan` shipped; see "JIT backend" above.

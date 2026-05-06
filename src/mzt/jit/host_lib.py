@@ -18,6 +18,8 @@ def emit_host_library_asm() -> str:
     return (
         _exports()
         + _text_section_header()
+        + _trampoline()
+        + _stack_top_getters()
         + _print_str_helper()
         + "".join(_emit_primitive(p) for p in all_primitives() if not p.inline)
         + _rodata()
@@ -69,12 +71,51 @@ def _clang_arch_flags() -> list[str]:
 
 
 def _exports() -> str:
-    lines = [".globl _print_str"]
+    lines = [
+        ".globl _print_str",
+        ".globl _trampoline",
+        ".globl _get_dstack_top",
+        ".globl _get_rstack_top",
+    ]
     for primitive in all_primitives():
         if primitive.inline:
             continue
         lines.append(f".globl {primitive.label}")
     return "\n".join(lines) + "\n"
+
+
+def _trampoline() -> str:
+    return (
+        "_trampoline:\n"
+        "    stp     x29, x30, [sp, #-16]!\n"
+        "    mov     x29, sp\n"
+        "    stp     x19, x20, [sp, #-16]!\n"
+        "    stp     x3, x4, [sp, #-16]!\n"
+        "    mov     x19, x0\n"
+        "    mov     x20, x1\n"
+        "    blr     x2\n"
+        "    ldp     x3, x4, [sp], #16\n"
+        "    str     x19, [x3]\n"
+        "    str     x20, [x4]\n"
+        "    ldp     x19, x20, [sp], #16\n"
+        "    ldp     x29, x30, [sp], #16\n"
+        "    ret\n\n"
+    )
+
+
+def _stack_top_getters() -> str:
+    return (
+        "_get_dstack_top:\n"
+        "    adrp    x0, Ldstack_base@PAGE\n"
+        "    add     x0, x0, Ldstack_base@PAGEOFF\n"
+        f"    add     x0, x0, #{_DSTACK_BYTES}\n"
+        "    ret\n\n"
+        "_get_rstack_top:\n"
+        "    adrp    x0, Lrstack_base@PAGE\n"
+        "    add     x0, x0, Lrstack_base@PAGEOFF\n"
+        f"    add     x0, x0, #{_RSTACK_BYTES}\n"
+        "    ret\n\n"
+    )
 
 
 def _text_section_header() -> str:

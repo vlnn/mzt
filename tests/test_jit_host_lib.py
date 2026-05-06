@@ -89,6 +89,44 @@ def test_asm_uses_correct_text_section(asm: str):
         "primitive bodies must live in __TEXT,__text so they are page-aligned and executable"
 
 
+def test_asm_globalises_trampoline(asm: str):
+    assert ".globl _trampoline" in asm, \
+        "the JIT trampoline must be globally resolvable so Python can dlsym and call it"
+
+
+def test_asm_globalises_get_dstack_top(asm: str):
+    assert ".globl _get_dstack_top" in asm, \
+        "exposing the data-stack top lets the executor initialize x19 from Python"
+
+
+def test_asm_globalises_get_rstack_top(asm: str):
+    assert ".globl _get_rstack_top" in asm, \
+        "exposing the return-stack top lets the executor initialize x20 from Python"
+
+
+def test_asm_defines_trampoline_label(asm: str):
+    import re
+    assert re.search(r"^_trampoline:", asm, re.MULTILINE), \
+        "the trampoline body must be emitted with its label"
+
+
+def test_asm_trampoline_body_calls_blr_x2(asm: str):
+    assert "blr     x2" in asm or "blr\tx2" in asm or "blr x2" in asm, \
+        "trampoline must blr to the JIT body whose address arrived in x2"
+
+
+def test_asm_trampoline_writes_back_x19_and_x20(asm: str):
+    assert "str     x19, [x3]" in asm or "str\tx19, [x3]" in asm or "str x19, [x3]" in asm, \
+        "trampoline must store the post-execution x19 to the out-pointer at x3"
+    assert "str     x20, [x4]" in asm or "str\tx20, [x4]" in asm or "str x20, [x4]" in asm, \
+        "trampoline must store the post-execution x20 to the out-pointer at x4"
+
+
+def test_asm_get_dstack_top_returns_base_plus_size(asm: str):
+    assert "Ldstack_base@PAGE" in asm and "#8192" in asm, \
+        "_get_dstack_top should compute Ldstack_base + DSTACK_BYTES into x0"
+
+
 def test_default_host_library_path_is_under_build_dir():
     path = default_host_library_path()
     assert path.suffix == ".dylib", "host library is a Mach-O dynamic library"
