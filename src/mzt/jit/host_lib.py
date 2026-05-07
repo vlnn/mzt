@@ -20,6 +20,7 @@ def emit_host_library_asm() -> str:
         + _text_section_header()
         + _trampoline()
         + _stack_top_getters()
+        + _dispatch_helpers()
         + _print_str_helper()
         + "".join(_emit_primitive(p) for p in all_primitives() if not p.inline)
         + _rodata()
@@ -76,6 +77,9 @@ def _exports() -> str:
         ".globl _trampoline",
         ".globl _get_dstack_top",
         ".globl _get_rstack_top",
+        ".globl _mzt_dispatch_main",
+        ".globl _invoke_with_stacks",
+        ".globl _mzt_main_q",
     ]
     for primitive in all_primitives():
         if primitive.inline:
@@ -98,6 +102,44 @@ def _trampoline() -> str:
         "    str     x19, [x3]\n"
         "    str     x20, [x4]\n"
         "    ldp     x19, x20, [sp], #16\n"
+        "    ldp     x29, x30, [sp], #16\n"
+        "    ret\n\n"
+    )
+
+
+_DISPATCH_DSTACK_BYTES = 4096
+_DISPATCH_RSTACK_BYTES = 2048
+
+
+def _dispatch_helpers() -> str:
+    return (
+        "_invoke_with_stacks:\n"
+        "    stp     x29, x30, [sp, #-16]!\n"
+        "    mov     x29, sp\n"
+        "    mov     x2, x0\n"
+        "    adrp    x0, Ldispatch_dstack@PAGE\n"
+        "    add     x0, x0, Ldispatch_dstack@PAGEOFF\n"
+        f"    add     x0, x0, #{_DISPATCH_DSTACK_BYTES}\n"
+        "    adrp    x1, Ldispatch_rstack@PAGE\n"
+        "    add     x1, x1, Ldispatch_rstack@PAGEOFF\n"
+        f"    add     x1, x1, #{_DISPATCH_RSTACK_BYTES}\n"
+        "    adrp    x3, Ldispatch_out_x19@PAGE\n"
+        "    add     x3, x3, Ldispatch_out_x19@PAGEOFF\n"
+        "    adrp    x4, Ldispatch_out_x20@PAGE\n"
+        "    add     x4, x4, Ldispatch_out_x20@PAGEOFF\n"
+        "    bl      _trampoline\n"
+        "    ldp     x29, x30, [sp], #16\n"
+        "    ret\n\n"
+        "_mzt_dispatch_main:\n"
+        "    stp     x29, x30, [sp, #-16]!\n"
+        "    mov     x29, sp\n"
+        "    mov     x1, x0\n"
+        "    adrp    x2, _invoke_with_stacks@PAGE\n"
+        "    add     x2, x2, _invoke_with_stacks@PAGEOFF\n"
+        "    adrp    x0, _mzt_main_q@PAGE\n"
+        "    add     x0, x0, _mzt_main_q@PAGEOFF\n"
+        "    ldr     x0, [x0]\n"
+        "    bl      _dispatch_async_f\n"
         "    ldp     x29, x30, [sp], #16\n"
         "    ret\n\n"
     )
@@ -159,4 +201,12 @@ def _bss() -> str:
         f"\n.zerofill __DATA,__bss,Ldstack_base,{_DSTACK_BYTES},3\n"
         f".zerofill __DATA,__bss,Lrstack_base,{_RSTACK_BYTES},3\n"
         f".zerofill __DATA,__bss,Luser_mem,{_USER_MEMORY_BYTES},3\n"
+        f".zerofill __DATA,__bss,Ldispatch_dstack,{_DISPATCH_DSTACK_BYTES},3\n"
+        f".zerofill __DATA,__bss,Ldispatch_rstack,{_DISPATCH_RSTACK_BYTES},3\n"
+        ".zerofill __DATA,__bss,Ldispatch_out_x19,8,3\n"
+        ".zerofill __DATA,__bss,Ldispatch_out_x20,8,3\n"
+        "\n.section __DATA,__data\n"
+        ".p2align 3\n"
+        "_mzt_main_q:\n"
+        "    .quad 0\n"
     )

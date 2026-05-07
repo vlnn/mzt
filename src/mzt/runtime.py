@@ -10,7 +10,7 @@ def runtime_preamble() -> str:
     return (
         _entry_point()
         + _print_str_helper()
-        + "".join(_emit_primitive(p) for p in all_primitives() if not p.inline)
+        + "".join(_emit_primitive(p) for p in all_primitives() if not p.inline and not p.jit_only)
     )
 
 

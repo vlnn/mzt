@@ -7,6 +7,7 @@ class Primitive:
     label: str
     body: str
     inline: bool = False
+    jit_only: bool = False
 
 
 def _binary_op(op: str) -> str:
@@ -336,6 +337,15 @@ _DUMP_STACKS = (
 )
 
 
+_DISPATCH_MAIN = (
+    "    ldr     x0, [x19], #8\n"
+    "    stp     x29, x30, [sp, #-16]!\n"
+    "    mov     x29, sp\n"
+    "    bl      _mzt_dispatch_main\n"
+    "    ldp     x29, x30, [sp], #16\n"
+)
+
+
 _PRIMITIVES: dict[str, Primitive] = {
     p.name: p for p in [
         Primitive("zero",   "_zero",   "    str     xzr, [x19, #-8]!\n", inline=True),
@@ -380,6 +390,7 @@ _PRIMITIVES: dict[str, Primitive] = {
         Primitive("execute", "_execute",        _EXECUTE),
         Primitive("halt",    "_halt",           _HALT),
         Primitive("key",     "_key",            _KEY),
+        Primitive("dispatch-main", "_dispatch_main", _DISPATCH_MAIN, jit_only=True),
         Primitive("__dump-stacks", "_dump_stacks", _DUMP_STACKS),
     ]
 }

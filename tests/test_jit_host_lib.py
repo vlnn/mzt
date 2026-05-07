@@ -19,7 +19,8 @@ def asm() -> str:
 
 
 def test_asm_does_not_define_main(asm: str):
-    assert "_main:" not in asm, \
+    import re
+    assert not re.search(r"^_main:", asm, re.MULTILINE), \
         "host library is loaded by Python; defining _main would clash with the host process"
 
 

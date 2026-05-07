@@ -5,6 +5,10 @@ from mzt.primitives import primitive
 from mzt.runtime import runtime_epilogue, runtime_preamble
 
 
+class EmitError(RuntimeError):
+    pass
+
+
 @dataclass
 class _StringTable:
     entries: list[tuple[str, bytes]] = field(default_factory=list)
@@ -60,6 +64,11 @@ def _emit_cell(cell: Cell, strings: _StringTable) -> str:
         return _emit_literal(cell)
     if isinstance(cell, PrimRef):
         prim = primitive(cell.name)
+        if prim.jit_only:
+            raise EmitError(
+                f"primitive {cell.name!r} is JIT-only and cannot be compiled by the AOT path; "
+                f"use 'mzt repl --jit' to evaluate code that uses it"
+            )
         if prim.inline:
             return prim.body
         return f"    bl      {prim.label}\n"

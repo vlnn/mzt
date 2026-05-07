@@ -119,7 +119,7 @@ Source files must define `: main ... ;` as the entry point.
 ## JIT backend (work in progress)
 
 A REPL-oriented JIT backend lives at `src/mzt/jit/` alongside the
-clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–6.
+clang-based AOT path. The plan is in `JIT_Plan`; this is steps 1–7.
 
 **Step 1 — JIT memory region.** `JitRegion` wraps `mmap(MAP_JIT)` plus
 `pthread_jit_write_protect_np`, exposes a `with region.writable():`
@@ -234,6 +234,40 @@ output (e.g. from `.`) goes straight to fd 1, the same fd the REPL
 driver writes its prompt to, so a `5 .` prints `5` between prompts
 naturally.
 
+**Step 7 — `dispatch-main` primitive.** A new Forth primitive that
+hands a function address off to libdispatch's main queue. The
+mechanics: the primitive pops `x19`'s top into `x0`, calls
+`_mzt_dispatch_main` (host helper) which loads the global
+`_dispatch_main_q` and calls `dispatch_async_f` with `_invoke_with_stacks`
+as the work function. When the main queue fires the work,
+`_invoke_with_stacks` re-trampolines into Forth on a private set of
+data and return stacks (`Ldispatch_dstack`, `Ldispatch_rstack` —
+4 KB and 2 KB respectively in `__DATA,__bss`), so the dispatched
+function sees a properly-initialized x19/x20.
+
+Idiomatic Forth usage:
+
+```
+: schedule-draw  :noname  100 100 50 fill-circle ; dispatch-main ;
+schedule-draw
+```
+
+`:noname … ;` pushes the address of an anonymous body, `dispatch-main`
+queues it. Because main-queue blocks serialize, the static
+dispatch stacks are safe — only one dispatched call is ever
+in flight at a time. Recursive dispatch (a dispatched function
+calling `dispatch-main` itself) queues the next call to drain
+later, so its setup happens after the previous one returns.
+
+The dispatched function gets fresh empty stacks: data and arguments
+must flow via globals, variables, or the user-memory area
+(`Luser_mem` / `create … allot`) — not through the dispatcher's
+data stack. End-to-end firing requires a running runloop, which
+Step 8's `:graphics` meta-command provides; before that, scheduled
+blocks queue but stay queued. 14 pure-text + asm-shape tests +
+3 platform-gated tests for the dylib build and primitive-table
+resolution.
+
 ### Smoke tests
 
 ```bash
@@ -270,6 +304,7 @@ uv run python examples/jit_host_lib_smoke.py    # builds dylib, resolves all pri
 uv run python examples/jit_emitter_smoke.py     # runs the IR emitter pipeline
 uv run python examples/jit_executor_smoke.py    # full end-to-end: 2 3 + via JIT
 uv run python examples/jit_repl_smoke.py        # REPL flow: feed defs, evaluate, observe
+uv run python examples/jit_dispatch_smoke.py    # schedules a Forth function on main queue
 mzt repl --jit                                  # interactive JIT REPL
 ```
 
@@ -302,4 +337,4 @@ Beyond `next_step`:
   dependency).
 - In progress: REPL with runtime word compilation
   (`MAP_JIT`/`pthread_jit_write_protect_np`/JIT entitlement). Steps
-  1–6 of `JIT_Plan` shipped; see "JIT backend" above.
+  1–7 of `JIT_Plan` shipped; see "JIT backend" above.

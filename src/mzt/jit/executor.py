@@ -4,7 +4,7 @@ from typing import Callable, Iterable
 
 from mzt.ir import Cell
 from mzt.jit.emitter import compile_body_to_bytes
-from mzt.jit.host_lib import build_host_library, default_host_library_path
+from mzt.jit.host_lib import build_host_library, default_host_library_path, emit_host_library_asm
 from mzt.jit.primitive_table import PrimitiveTable, load_primitives_from_dylib
 from mzt.jit.region import JitRegion
 
@@ -42,9 +42,9 @@ class JitExecutor:
         region_size: int = _DEFAULT_REGION_SIZE,
     ) -> "JitExecutor":
         path = Path(host_lib_path) if host_lib_path else default_host_library_path()
-        if not path.exists():
-            build_host_library(path)
+        _ensure_host_library(path)
         lib = ctypes.CDLL(str(path))
+        _populate_main_queue_pointer(lib)
         primitives = load_primitives_from_dylib(path)
         trampoline = _wrap_trampoline(lib.trampoline)
         dstack_top = _u64_returner(lib.get_dstack_top)()
@@ -101,6 +101,55 @@ class JitExecutor:
 
     def read_rstack(self) -> list[int]:
         return _read_stack(self.x20, self.rstack_top)
+
+
+def _ensure_host_library(path: Path) -> None:
+    expected = emit_host_library_asm()
+    if _cached_dylib_matches(path, expected):
+        return
+    build_host_library(path, asm=expected)
+
+
+def _cached_dylib_matches(path: Path, expected_asm: str) -> bool:
+    if not path.exists():
+        return False
+    asm_path = path.with_suffix(".s")
+    if not asm_path.exists():
+        return False
+    try:
+        return asm_path.read_text() == expected_asm
+    except OSError:
+        return False
+
+
+def _populate_main_queue_pointer(lib: ctypes.CDLL) -> None:
+    handle = _resolve_main_queue_handle()
+    mzt_main_q = ctypes.c_uint64.in_dll(lib, "mzt_main_q")
+    mzt_main_q.value = handle
+
+
+def _resolve_main_queue_handle() -> int:
+    runtime = ctypes.CDLL(None)
+    for strategy in (_main_queue_via_function, _main_queue_via_data_symbol):
+        try:
+            handle = strategy(runtime)
+        except (AttributeError, OSError, ValueError):
+            continue
+        if handle:
+            return handle
+    return 0
+
+
+def _main_queue_via_function(runtime: ctypes.CDLL) -> int:
+    getter = runtime.dispatch_get_main_queue
+    getter.restype = ctypes.c_void_p
+    result = getter()
+    return int(result) if result else 0
+
+
+def _main_queue_via_data_symbol(runtime: ctypes.CDLL) -> int:
+    struct = ctypes.c_long.in_dll(runtime, "dispatch_main_q")
+    return ctypes.addressof(struct)
 
 
 def _wrap_trampoline(c_trampoline) -> TrampolineFn:
